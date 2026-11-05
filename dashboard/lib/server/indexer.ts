@@ -6,10 +6,11 @@ import {
   type Address,
   type Hex,
 } from 'viem';
-import { sepolia } from 'viem/chains';
+import { sepolia } from '@/lib/chain';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CHAIN_ID } from '@/lib/base';
 import { CARD_REGISTRY_ABI, MERCHANT_REGISTRY_ABI, ERC20_ABI } from '@/lib/contracts';
+import type { Json } from '@/lib/supabase/types';
 
 const CURSOR_NAME = 'sepolia_paidx';
 
@@ -82,6 +83,10 @@ export async function runIndexerSync(): Promise<IndexerRunResult> {
         const eventName = log.eventName;
 
         // Idempotent insertion into chain_events
+        const serializedPayload = JSON.parse(
+          JSON.stringify(log.args || {}, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+        ) as Json;
+
         const { error: eventError } = await supabase.from('chain_events').insert({
           chain_id: CHAIN_ID,
           tx_hash: txHash,
@@ -89,7 +94,7 @@ export async function runIndexerSync(): Promise<IndexerRunResult> {
           event_name: eventName,
           contract_address: cardRegistryAddress.toLowerCase(),
           block_number: blockNumber,
-          payload: (log.args as unknown as Record<string, unknown>) || {},
+          payload: serializedPayload,
         });
 
         if (!eventError) {
@@ -143,6 +148,10 @@ export async function runIndexerSync(): Promise<IndexerRunResult> {
         const blockNumber = Number(log.blockNumber);
         const eventName = log.eventName;
 
+        const serializedMerchantPayload = JSON.parse(
+          JSON.stringify(log.args || {}, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+        ) as Json;
+
         await supabase.from('chain_events').insert({
           chain_id: CHAIN_ID,
           tx_hash: txHash,
@@ -150,7 +159,7 @@ export async function runIndexerSync(): Promise<IndexerRunResult> {
           event_name: eventName,
           contract_address: merchantRegistryAddress.toLowerCase(),
           block_number: blockNumber,
-          payload: (log.args as unknown as Record<string, unknown>) || {},
+          payload: serializedMerchantPayload,
         });
 
         if (eventName === 'MerchantRegistered' && log.args) {

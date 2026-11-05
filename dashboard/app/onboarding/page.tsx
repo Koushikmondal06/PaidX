@@ -11,7 +11,7 @@ import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getRealUserSession, saveSession, UserSession, UserRole } from '@/lib/auth';
 import { CHAIN_ID, PAYMENT_TOKEN_ADDRESS, truncateAddress } from '@/lib/base';
 import { createPublicClient, http, type Address } from 'viem';
-import { sepolia } from 'viem/chains';
+import { sepolia } from '@/lib/chain';
 import {
   Wallet,
   CreditCard,

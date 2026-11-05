@@ -14,7 +14,7 @@ import { getExplorerTxUrl, getExplorerAddressUrl, truncateAddress, PAYMENT_TOKEN
 import { formatUsdc } from '@/lib/currency';
 import { ERC20_ABI } from '@/lib/contracts';
 import { createPublicClient, http, formatEther, type Address } from 'viem';
-import { sepolia } from 'viem/chains';
+import { sepolia } from '@/lib/chain';
 import {
   CreditCard,
   Sliders,
@@ -262,9 +262,8 @@ export default function UserDashboardOverviewPage() {
             </div>
             <div className="w-full h-2 bg-[#0E1D24] rounded-full overflow-hidden border border-[#1A2E38]">
               <div
-                className={`h-full transition-all duration-500 rounded-full ${
-                  percentSpent > 85 ? 'bg-rose-500' : 'bg-[#5465FF]'
-                }`}
+                className={`h-full transition-all duration-500 rounded-full ${percentSpent > 85 ? 'bg-rose-500' : 'bg-[#5465FF]'
+                  }`}
                 style={{ width: `${Math.min(100, percentSpent)}%` }}
               />
             </div>

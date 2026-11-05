@@ -7,7 +7,7 @@ import {
   type Hex,
   type Address,
 } from 'viem';
-import { sepolia } from 'viem/chains';
+import { sepolia } from '@/lib/chain';
 import { getSmartAccountsEnvironment, contracts, ExecutionMode } from '@metamask/smart-accounts-kit';
 import { getSessionAccount } from './sessionAccount';
 import { ERC20_ABI } from '@/lib/contracts';

@@ -17,10 +17,10 @@ if (typeof window !== 'undefined') {
  * 4. Bypasses RLS for authoritative server-side ledger and state management.
  */
 export function createServerSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const secretKey = process.env.SUPABASE_SECRET_KEY || '';
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const secretKey = process.env.SUPABASE_SECRET_KEY || 'sb_secret_placeholder_for_build';
 
-  if (!supabaseUrl || !secretKey) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('[Supabase Server] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY');
     }
