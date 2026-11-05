@@ -2,22 +2,25 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredSession } from '@/lib/auth';
+import { getRealUserSession, getStoredSession } from '@/lib/auth';
 
 export default function RootPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const session = getStoredSession();
-    if (!session) {
-      router.replace('/auth');
-    } else if (session.onboardingStep !== 'completed') {
-      router.replace('/onboarding');
-    } else if (session.role === 'merchant') {
-      router.replace('/merchant');
-    } else {
-      router.replace('/dashboard');
+    async function init() {
+      const session = (await getRealUserSession()) || getStoredSession();
+      if (!session) {
+        router.replace('/auth');
+      } else if (session.onboardingStep !== 'completed') {
+        router.replace('/onboarding');
+      } else if (session.role === 'merchant') {
+        router.replace('/merchant');
+      } else {
+        router.replace('/dashboard');
+      }
     }
+    init();
   }, [router]);
 
   return (

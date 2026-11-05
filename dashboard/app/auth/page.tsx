@@ -1,16 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Script from 'next/script';
 import { PaidXLogo } from '@/components/ui/PaidXLogo';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { createNewSession, saveSession, DEFAULT_DEMO_USER } from '@/lib/auth';
-import { Mail, Phone, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { getRealUserSession, clearSession } from '@/lib/auth';
+import { Mail, Phone, Lock, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export default function AuthPage() {
   const router = useRouter();
+  const supabase = createBrowserSupabaseClient();
 
   // Mode: login vs register
   const [mode, setMode] = useState<'login' | 'register'>('register');
@@ -25,10 +28,79 @@ export default function AuthPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Clear any stale local session on auth page visit
+  useEffect(() => {
+    clearSession();
+  }, []);
+
+  // Google One Tap setup
+  useEffect(() => {
+    const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!googleClientId || typeof window === 'undefined') return;
+
+    const setupGoogleOneTap = async () => {
+      // Generate cryptographically secure nonce
+      const rawNonce = crypto.randomUUID();
+      const encoder = new TextEncoder();
+      const nonceBuffer = encoder.encode(rawNonce);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', nonceBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+      // @ts-expect-error Google Identity Services global
+      if (window.google?.accounts?.id) {
+        // @ts-expect-error Google Identity Services global
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (response: { credential: string }) => {
+            try {
+              setIsLoading(true);
+              setError(null);
+              const { data, error: signInError } = await supabase.auth.signInWithIdToken({
+                provider: 'google',
+                token: response.credential,
+                nonce: rawNonce,
+              });
+
+              if (signInError) throw signInError;
+              if (data.user) {
+                const session = await getRealUserSession();
+                if (session?.onboardingStep === 'completed') {
+                  router.push(session.role === 'merchant' ? '/merchant' : '/dashboard');
+                } else {
+                  router.push('/onboarding');
+                }
+              }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Google One Tap sign-in failed.';
+              setError(msg);
+            } finally {
+              setIsLoading(false);
+            }
+          },
+          nonce: hashedNonce,
+          auto_select: false,
+        });
+
+        // @ts-expect-error Google Identity Services global
+        window.google.accounts.id.prompt();
+      }
+    };
+
+    // Attempt initialize when window.google is ready
+    const timer = setTimeout(() => {
+      setupGoogleOneTap().catch(console.error);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [supabase, router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfoMessage(null);
 
     const identifier = channel === 'email' ? email.trim() : phone.trim();
 
@@ -55,34 +127,103 @@ export default function AuthPage() {
 
     setIsLoading(true);
 
-    // Simulate direct secure authentication (no OTP required)
-    setTimeout(() => {
-      setIsLoading(false);
-
+    try {
       if (mode === 'register') {
-        // Create new session starting at wallet selection
-        const newSession = createNewSession(identifier, channel);
-        router.push('/onboarding');
-      } else {
-        // Sign in existing session or demo user
-        const session = {
-          ...DEFAULT_DEMO_USER,
-          identifier,
-          type: channel,
-        };
-        saveSession(session);
-        router.push('/dashboard');
-      }
-    }, 600);
-  };
+        if (channel === 'email') {
+          const { data, error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                display_name: email.split('@')[0],
+              },
+            },
+          });
 
-  const handleQuickDemo = () => {
-    saveSession(DEFAULT_DEMO_USER);
-    router.push('/dashboard');
+          if (signUpError) throw signUpError;
+
+          if (data.user && !data.session) {
+            setInfoMessage('Account created! Please check your email to confirm your registration before signing in.');
+            setIsLoading(false);
+            return;
+          }
+
+          // User session established directly
+          await getRealUserSession();
+          router.push('/onboarding');
+        } else {
+          // Phone registration
+          const { data, error: signUpError } = await supabase.auth.signUp({
+            phone,
+            password,
+            options: {
+              data: {
+                display_name: phone,
+              },
+            },
+          });
+
+          if (signUpError) throw signUpError;
+
+          if (data.user && !data.session) {
+            setInfoMessage('Account created! Verification code sent to your phone.');
+            setIsLoading(false);
+            return;
+          }
+
+          await getRealUserSession();
+          router.push('/onboarding');
+        }
+      } else {
+        // Sign In
+        if (channel === 'email') {
+          const { data, error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (signInError) throw signInError;
+
+          if (data.session) {
+            const session = await getRealUserSession();
+            if (session?.onboardingStep === 'completed') {
+              router.push(session.role === 'merchant' ? '/merchant' : '/dashboard');
+            } else {
+              router.push('/onboarding');
+            }
+          }
+        } else {
+          // Phone sign in
+          const { data, error: signInError } = await supabase.auth.signInWithPassword({
+            phone,
+            password,
+          });
+
+          if (signInError) throw signInError;
+
+          if (data.session) {
+            const session = await getRealUserSession();
+            if (session?.onboardingStep === 'completed') {
+              router.push(session.role === 'merchant' ? '/merchant' : '/dashboard');
+            } else {
+              router.push('/onboarding');
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Authentication failed. Please verify your credentials.';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#071013] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Google Identity Services SDK */}
+      <Script src="https://accounts.google.com/gsi/client" strategy="lazyOnload" />
+
       {/* Background glow aesthetics */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#5465FF]/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -96,7 +237,7 @@ export default function AuthPage() {
             {mode === 'register' ? 'Create Your PaidX Account' : 'Sign In to PaidX Console'}
           </h1>
           <p className="text-xs text-[#AAAAAA] font-mono">
-            Contactless Retail Payments on Base (Non-Custodial)
+            Contactless Retail Payments on Ethereum Sepolia (Non-Custodial)
           </p>
         </div>
 
@@ -107,12 +248,12 @@ export default function AuthPage() {
             onClick={() => {
               setMode('register');
               setError(null);
+              setInfoMessage(null);
             }}
-            className={`flex-1 py-2 text-xs font-mono font-medium rounded-lg transition-all ${
-              mode === 'register'
+            className={`flex-1 py-2 text-xs font-mono font-medium rounded-lg transition-all ${mode === 'register'
                 ? 'bg-[#0E1D24] text-[#DFE0E2] border border-[#5465FF]/40 shadow-sm'
                 : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
+              }`}
           >
             Create Account
           </button>
@@ -121,12 +262,12 @@ export default function AuthPage() {
             onClick={() => {
               setMode('login');
               setError(null);
+              setInfoMessage(null);
             }}
-            className={`flex-1 py-2 text-xs font-mono font-medium rounded-lg transition-all ${
-              mode === 'login'
+            className={`flex-1 py-2 text-xs font-mono font-medium rounded-lg transition-all ${mode === 'login'
                 ? 'bg-[#0E1D24] text-[#DFE0E2] border border-[#5465FF]/40 shadow-sm'
                 : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
+              }`}
           >
             Sign In
           </button>
@@ -141,12 +282,12 @@ export default function AuthPage() {
               onClick={() => {
                 setChannel('email');
                 setError(null);
+                setInfoMessage(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                channel === 'email'
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${channel === 'email'
                   ? 'bg-[#5465FF]/15 text-[#5465FF] border border-[#5465FF]/30'
                   : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-              }`}
+                }`}
             >
               <Mail className="w-3.5 h-3.5" />
               <span>Email</span>
@@ -156,12 +297,12 @@ export default function AuthPage() {
               onClick={() => {
                 setChannel('phone');
                 setError(null);
+                setInfoMessage(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                channel === 'phone'
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${channel === 'phone'
                   ? 'bg-[#5465FF]/15 text-[#5465FF] border border-[#5465FF]/30'
                   : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-              }`}
+                }`}
             >
               <Phone className="w-3.5 h-3.5" />
               <span>Phone Number</span>
@@ -211,6 +352,12 @@ export default function AuthPage() {
               />
             )}
 
+            {infoMessage && (
+              <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-900/60 text-emerald-300 text-xs font-mono">
+                {infoMessage}
+              </div>
+            )}
+
             {error && (
               <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono">
                 {error}
@@ -229,22 +376,18 @@ export default function AuthPage() {
             </Button>
           </form>
 
-          {/* Quick Demo Bypass for Developer Testing */}
+          {/* Real Google One Tap Helper Info */}
           <div className="pt-3 border-t border-[#1A2E38] text-center">
-            <button
-              type="button"
-              onClick={handleQuickDemo}
-              className="text-[11px] font-mono text-[#5465FF] hover:underline inline-flex items-center gap-1"
-            >
-              <ShieldCheck className="w-3 h-3" />
-              <span>Or explore as Demo User (Pre-funded on Base)</span>
-            </button>
+            <p className="text-[11px] font-mono text-[#888888] flex items-center justify-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#5465FF]" />
+              <span>Google One Tap active when configured in Supabase</span>
+            </p>
           </div>
         </Card>
 
         {/* Security Tagline */}
         <div className="text-center text-[11px] font-mono text-[#666666]">
-          Non-custodial smart accounts powered by Base L2 & MetaMask
+          Non-custodial smart accounts on Ethereum Sepolia
         </div>
       </div>
     </div>

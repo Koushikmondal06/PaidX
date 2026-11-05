@@ -1,11 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { getRealUserSession, UserSession } from '@/lib/auth';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { truncateAddress, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
+import { formatUsdc } from '@/lib/currency';
 import {
   CreditCard,
   Sliders,
@@ -17,135 +21,183 @@ import {
   ShieldAlert,
   Radio,
   CheckCircle2,
+  Trash2,
 } from 'lucide-react';
 
-interface CardItem {
+interface CardRow {
   id: string;
-  uid: string;
-  label: string;
-  status: 'active' | 'frozen';
-  dailyLimitUsdc: number;
-  perTxLimitUsdc: number;
-  spentTodayUsdc: number;
+  uid_hash: string;
+  status: 'active' | 'frozen' | 'revoked';
+  registration_tx_hash: string | null;
+  registered_at_block: number | null;
+  created_at: string;
 }
 
-interface AuditLog {
+interface PermissionRow {
   id: string;
-  date: string;
-  oldDaily: number;
-  newDaily: number;
-  reason: string;
+  limit_per_period: string;
+  remaining_in_period: string;
+  period_seconds: number;
+  valid_until: string;
+  status: 'active' | 'revoked' | 'expired';
 }
 
 export default function CardsAndLimitsPage() {
-  const [cards, setCards] = useState<CardItem[]>([
-    {
-      id: 'c_01',
-      uid: '4305-0129-8812',
-      label: 'Black Matte NFC',
-      status: 'active',
-      dailyLimitUsdc: 25.0,
-      perTxLimitUsdc: 10.0,
-      spentTodayUsdc: 6.5,
-    },
-  ]);
+  const [session, setSession] = useState<UserSession | null>(null);
+  const [cards, setCards] = useState<CardRow[]>([]);
+  const [activePermission, setActivePermission] = useState<PermissionRow | null>(null);
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([
-    {
-      id: 'log_01',
-      date: '2026-11-05 14:22 UTC',
-      oldDaily: 15.0,
-      newDaily: 25.0,
-      reason: 'Upgraded daily lunch allowance',
-    },
-    {
-      id: 'log_02',
-      date: '2026-11-01 09:10 UTC',
-      oldDaily: 10.0,
-      newDaily: 15.0,
-      reason: 'Initial card activation limit',
-    },
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // Modal states
-  const [showLimitModal, setShowLimitModal] = useState(false);
+  // Modals
   const [showClaimModal, setShowClaimModal] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<CardItem | null>(null);
+  const [showRevokeModal, setShowRevokeModal] = useState(false);
 
-  // Edit limit form
-  const [newDaily, setNewDaily] = useState('25.00');
-  const [newPerTx, setNewPerTx] = useState('10.00');
-  const [reason, setReason] = useState('');
+  // Link card input
+  const [rawNfcUid, setRawNfcUid] = useState('');
+  const [isSubmittingCard, setIsSubmittingCard] = useState(false);
 
-  // Claim card form
-  const [claimCode, setClaimCode] = useState('');
-  const [cardLabel, setCardLabel] = useState('My PaidX Card');
+  const supabase = createBrowserSupabaseClient();
 
-  const handleOpenLimitModal = (card: CardItem) => {
-    setSelectedCard(card);
-    setNewDaily(card.dailyLimitUsdc.toString());
-    setNewPerTx(card.perTxLimitUsdc.toString());
-    setShowLimitModal(true);
+  const loadData = async () => {
+    setIsLoading(true);
+    setActionError(null);
+    try {
+      const s = await getRealUserSession();
+      setSession(s);
+      if (!s) return;
+
+      // 1. Fetch real cards
+      const { data: cardsData } = await supabase
+        .from('cards')
+        .select('*')
+        .eq('user_id', s.id)
+        .order('created_at', { ascending: false });
+
+      if (cardsData) setCards(cardsData as unknown as CardRow[]);
+
+      // 2. Fetch active permission
+      const { data: permData } = await supabase
+        .from('permissions')
+        .select('*')
+        .eq('user_id', s.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setActivePermission((permData as unknown as PermissionRow) || null);
+    } catch (err: unknown) {
+      console.warn('[Cards] Load error:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSaveLimits = (e: React.FormEvent) => {
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Register real NFC card via API (raw UID hashed with secret salt on server)
+  const handleRegisterCard = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCard) return;
+    if (!rawNfcUid) return;
 
-    const dailyNum = parseFloat(newDaily);
-    const perTxNum = parseFloat(newPerTx);
+    setIsSubmittingCard(true);
+    setActionError(null);
 
-    setCards((prev) =>
-      prev.map((c) =>
-        c.id === selectedCard.id
-          ? { ...c, dailyLimitUsdc: dailyNum, perTxLimitUsdc: perTxNum }
-          : c
-      )
-    );
+    try {
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession.session?.access_token;
 
-    // Add audit entry
-    setAuditLogs((prev) => [
-      {
-        id: `log_${Date.now()}`,
-        date: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC',
-        oldDaily: selectedCard.dailyLimitUsdc,
-        newDaily: dailyNum,
-        reason: reason || 'Updated via Console',
-      },
-      ...prev,
-    ]);
+      const res = await fetch('/api/cards/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ rawUid: rawNfcUid.trim() }),
+      });
 
-    setShowLimitModal(false);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to register card');
+      }
+
+      setRawNfcUid('');
+      setShowClaimModal(false);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error registering card';
+      setActionError(msg);
+    } finally {
+      setIsSubmittingCard(false);
+    }
   };
 
-  const handleToggleFreeze = (cardId: string) => {
-    setCards((prev) =>
-      prev.map((c) => {
-        if (c.id === cardId) {
-          const newStatus = c.status === 'active' ? 'frozen' : 'active';
-          return { ...c, status: newStatus };
-        }
-        return c;
-      })
-    );
+  // Toggle Card Freeze / Active state
+  const handleToggleFreeze = async (card: CardRow) => {
+    setActionError(null);
+    const newStatus = card.status === 'active' ? 'frozen' : 'active';
+
+    try {
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession.session?.access_token;
+
+      const res = await fetch('/api/cards/status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ cardId: card.id, status: newStatus }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update card status');
+      }
+
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating card status';
+      setActionError(msg);
+    }
   };
 
-  const handleClaimCard = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newCard: CardItem = {
-      id: `c_${Date.now()}`,
-      uid: `${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
-      label: cardLabel || 'New PaidX Card',
-      status: 'active',
-      dailyLimitUsdc: 20.0,
-      perTxLimitUsdc: 10.0,
-      spentTodayUsdc: 0.0,
-    };
+  // Revoke active ERC-7715 permission
+  const handleRevokePermission = async () => {
+    if (!activePermission) return;
+    setActionError(null);
 
-    setCards((prev) => [...prev, newCard]);
-    setShowClaimModal(false);
-    setClaimCode('');
+    try {
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession.session?.access_token;
+
+      const res = await fetch('/api/permissions/revoke', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ permissionId: activePermission.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to revoke permission');
+      }
+
+      setShowRevokeModal(false);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error revoking permission';
+      setActionError(msg);
+    }
   };
+
+  if (!session) return null;
 
   return (
     <div className="space-y-8">
@@ -153,10 +205,10 @@ export default function CardsAndLimitsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#1A2E38]">
         <div>
           <h1 className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
-            Cards & Spending Limits
+            Physical NFC Cards & Spending Limits
           </h1>
-          <p className="text-xs text-[#AAAAAA] font-mono mt-1">
-            Manage your physical NFC cards and on-chain ERC-7710 delegation caps
+          <p className="text-xs font-mono text-[#AAAAAA] mt-1">
+            Manage hardware cards linked to your self-custody wallet on Ethereum Sepolia
           </p>
         </div>
 
@@ -167,215 +219,225 @@ export default function CardsAndLimitsPage() {
           className="font-mono text-xs"
         >
           <Plus className="w-3.5 h-3.5 mr-1.5" />
-          Claim Physical Card
+          <span>Link New NFC Card</span>
         </Button>
       </div>
 
-      {/* Cards List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {cards.map((card) => (
-          <Card key={card.id} className="p-6 space-y-5 border-[#1A2E38]">
-            {/* Visual Card representation */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#1A2E38]">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#5465FF]" />
-                <span className="text-xs font-mono font-bold text-[#DFE0E2]">
-                  {card.label}
-                </span>
-              </div>
-              <Badge variant={card.status === 'active' ? 'active' : 'frozen'}>
-                {card.status.toUpperCase()}
-              </Badge>
-            </div>
+      {actionError && (
+        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
-            <div className="grid grid-cols-2 gap-4 py-2">
-              <div>
-                <span className="text-[10px] font-mono text-[#888888]">DAILY LIMIT</span>
-                <div className="text-base font-mono font-bold text-[#DFE0E2]">
-                  ${card.dailyLimitUsdc.toFixed(2)} USDC
-                </div>
-              </div>
-              <div>
-                <span className="text-[10px] font-mono text-[#888888]">PER-TRANSACTION</span>
-                <div className="text-base font-mono font-bold text-[#DFE0E2]">
-                  ${card.perTxLimitUsdc.toFixed(2)} USDC
-                </div>
-              </div>
-            </div>
+      {/* Linked Cards Section */}
+      <div className="space-y-4">
+        <h2 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
+          Registered Physical Cards
+        </h2>
 
-            <div className="p-3 rounded-lg bg-[#071013] border border-[#1A2E38] space-y-1.5">
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-[#AAAAAA]">Today's Usage:</span>
-                <span className="text-[#DFE0E2]">
-                  ${card.spentTodayUsdc.toFixed(2)} / ${card.dailyLimitUsdc.toFixed(2)}
-                </span>
-              </div>
-              <div className="w-full bg-[#0E1D24] h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-[#5465FF] h-full rounded-full"
-                  style={{
-                    width: `${Math.min(100, (card.spentTodayUsdc / card.dailyLimitUsdc) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1 text-xs font-mono"
-                onClick={() => handleOpenLimitModal(card)}
+        {cards.length === 0 ? (
+          <Card className="border-[#1A2E38] py-8 text-center space-y-3">
+            <Radio className="w-8 h-8 text-[#5465FF] mx-auto opacity-70" />
+            <p className="text-xs font-mono text-[#AAAAAA]">
+              No physical NFC cards linked to your account yet.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowClaimModal(true)}
+              className="font-mono text-xs"
+            >
+              Link Your First Card
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {cards.map((card) => (
+              <Card
+                key={card.id}
+                className={`border-[#1A2E38] space-y-4 relative overflow-hidden transition-all ${
+                  card.status === 'frozen' ? 'opacity-70 bg-[#071013]' : 'bg-[#0B161B]'
+                }`}
               >
-                <Sliders className="w-3.5 h-3.5 mr-1 text-[#5465FF]" />
-                Adjust Limits
-              </Button>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`p-2 rounded-lg ${
+                        card.status === 'active'
+                          ? 'bg-[#5465FF]/20 text-[#5465FF]'
+                          : 'bg-rose-950/40 text-rose-400'
+                      }`}
+                    >
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-mono font-bold text-[#DFE0E2]">
+                        NFC Card ({truncateAddress(card.uid_hash)})
+                      </h3>
+                      <p className="text-[10px] font-mono text-[#666666]">
+                        Registered: {new Date(card.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <Badge variant={card.status === 'active' ? 'active' : 'frozen'}>
+                    {card.status.toUpperCase()}
+                  </Badge>
+                </div>
+
+                <div className="p-3 bg-[#071013] rounded-lg border border-[#1A2E38] text-[11px] font-mono text-[#888888] space-y-1">
+                  <p>
+                    <span className="text-[#AAAAAA]">Hashed Identifier:</span>{' '}
+                    <span className="text-indigo-300 select-all">{truncateAddress(card.uid_hash)}</span>
+                  </p>
+                  <p>
+                    <span className="text-[#AAAAAA]">On-chain Registry:</span>{' '}
+                    <span className="text-emerald-400">
+                      {card.registration_tx_hash ? 'Confirmed' : 'Active'}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-[#1A2E38] flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleToggleFreeze(card)}
+                    className="font-mono text-xs"
+                  >
+                    {card.status === 'active' ? (
+                      <>
+                        <Lock className="w-3 h-3 mr-1 text-rose-400" />
+                        <span>Freeze Card</span>
+                      </>
+                    ) : (
+                      <>
+                        <Unlock className="w-3 h-3 mr-1 text-emerald-400" />
+                        <span>Unfreeze Card</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ERC-7715 Permission Delegation Section */}
+      <div className="space-y-4">
+        <h2 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
+          Active Spending Delegation (ERC-7715)
+        </h2>
+
+        {activePermission ? (
+          <Card className="border-[#1A2E38] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-xs font-mono font-bold text-[#DFE0E2]">
+                  Rolling 24-Hour Spending Cap: ${formatUsdc(activePermission.limit_per_period)} USDC
+                </p>
+                <p className="text-[11px] font-mono text-[#888888] mt-0.5">
+                  Available in current period: ${formatUsdc(activePermission.remaining_in_period)} USDC · Valid until{' '}
+                  {new Date(activePermission.valid_until).toLocaleDateString()}
+                </p>
+              </div>
 
               <Button
-                variant={card.status === 'active' ? 'danger' : 'secondary'}
+                variant="danger"
                 size="sm"
-                className="flex-1 text-xs font-mono"
-                onClick={() => handleToggleFreeze(card.id)}
+                onClick={() => setShowRevokeModal(true)}
+                className="font-mono text-xs w-fit"
               >
-                {card.status === 'active' ? (
-                  <>
-                    <Lock className="w-3.5 h-3.5 mr-1" />
-                    Pause Card
-                  </>
-                ) : (
-                  <>
-                    <Unlock className="w-3.5 h-3.5 mr-1" />
-                    Unfreeze
-                  </>
-                )}
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                <span>Revoke Delegation</span>
               </Button>
             </div>
           </Card>
-        ))}
+        ) : (
+          <Card className="border-[#1A2E38] py-6 text-center space-y-2">
+            <p className="text-xs font-mono text-[#AAAAAA]">
+              No active spending delegation found.
+            </p>
+            <p className="text-[11px] font-mono text-[#666666]">
+              Create an account or complete wallet onboarding to configure periodic spending limits.
+            </p>
+          </Card>
+        )}
       </div>
 
-      {/* Audit Log Table */}
-      <Card className="p-6">
-        <div className="pb-4 border-b border-[#1A2E38] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-[#5465FF]" />
-            <h3 className="text-xs font-mono font-bold text-[#DFE0E2]">
-              Spending Limit Audit Logs
-            </h3>
-          </div>
-          <span className="text-[10px] font-mono text-[#888888]">
-            Immutable record of all policy adjustments
-          </span>
-        </div>
-
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-left text-xs font-mono">
-            <thead>
-              <tr className="border-b border-[#1A2E38] text-[#888888]">
-                <th className="py-2.5">Date & Time</th>
-                <th className="py-2.5">Previous Daily Cap</th>
-                <th className="py-2.5">New Daily Cap</th>
-                <th className="py-2.5">Reason</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1A2E38]">
-              {auditLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-[#0E1D24]/40">
-                  <td className="py-3 text-[#DFE0E2]">{log.date}</td>
-                  <td className="py-3 text-[#AAAAAA]">${log.oldDaily.toFixed(2)} USDC</td>
-                  <td className="py-3 text-emerald-400 font-bold">${log.newDaily.toFixed(2)} USDC</td>
-                  <td className="py-3 text-[#AAAAAA]">{log.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Adjust Limits Modal */}
+      {/* Link Card Modal */}
       <Modal
-        isOpen={showLimitModal}
-        onClose={() => setShowLimitModal(false)}
-        title="Adjust Scoped Delegation Limits"
+        isOpen={showClaimModal}
+        onClose={() => setShowClaimModal(false)}
+        title="Link Physical NFC Card"
       >
-        <form onSubmit={handleSaveLimits} className="space-y-4">
+        <form onSubmit={handleRegisterCard} className="space-y-4">
+          <p className="text-xs font-mono text-[#AAAAAA]">
+            Enter the NFC tag UID from your physical card. The raw UID is hashed server-side with
+            CARD_UID_SALT and never stored in plain text.
+          </p>
+
           <Input
-            label="Daily Spending Cap (USDC)"
-            type="number"
-            step="0.01"
-            value={newDaily}
-            onChange={(e) => setNewDaily(e.target.value)}
-            helperText="Maximum allowed per 24-hour UTC window"
+            label="NFC Tag UID"
+            placeholder="e.g. 04:A2:B3:C4:D5:E6:F7"
+            value={rawNfcUid}
+            onChange={(e) => setRawNfcUid(e.target.value)}
+            helperText="Hexadecimal UID format"
             required
           />
 
-          <Input
-            label="Per-Transaction Maximum (USDC)"
-            type="number"
-            step="0.01"
-            value={newPerTx}
-            onChange={(e) => setNewPerTx(e.target.value)}
-            helperText="Single tap cannot exceed this amount"
-            required
-          />
-
-          <Input
-            label="Reason for Adjustment"
-            placeholder="e.g. Travel allowance or weekly adjustment"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-
-          <div className="p-3 rounded-lg bg-[#071013] border border-[#1A2E38] text-[11px] font-mono text-[#AAAAAA]">
-            Note: Increasing daily limits requires signing an on-chain caveat update via your
-            MetaMask Smart Account.
-          </div>
-
-          <div className="flex gap-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
               variant="outline"
-              size="md"
-              className="w-1/3"
-              onClick={() => setShowLimitModal(false)}
+              size="sm"
+              onClick={() => setShowClaimModal(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="md" className="w-2/3">
-              Confirm & Update
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              isLoading={isSubmittingCard}
+            >
+              Register Card
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Claim Physical Card Modal */}
+      {/* Revoke Permission Modal */}
       <Modal
-        isOpen={showClaimModal}
-        onClose={() => setShowClaimModal(false)}
-        title="Pair Physical PaidX NFC Card"
+        isOpen={showRevokeModal}
+        onClose={() => setShowRevokeModal(false)}
+        title="Revoke Spending Permission"
       >
-        <form onSubmit={handleClaimCard} className="space-y-4">
-          <Input
-            label="Packaging Claim Secret"
-            placeholder="PAIDX-PKG-XXXX-XXXX"
-            value={claimCode}
-            onChange={(e) => setClaimCode(e.target.value)}
-            helperText="Found inside the physical packaging sleeve"
-            required
-          />
+        <div className="space-y-4">
+          <p className="text-xs font-mono text-[#AAAAAA]">
+            Are you sure you want to revoke this ERC-7715 spending delegation?
+            Physical NFC card taps will immediately be rejected until a new delegation is granted.
+          </p>
 
-          <Input
-            label="Card Label / Name"
-            placeholder="e.g. Primary Matte Black"
-            value={cardLabel}
-            onChange={(e) => setCardLabel(e.target.value)}
-            required
-          />
-
-          <Button type="submit" variant="primary" size="md" className="w-full">
-            Pair & Activate Card
-          </Button>
-        </form>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRevokeModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleRevokePermission}
+            >
+              Confirm Revocation
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

@@ -6,8 +6,10 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { StatCard } from '@/components/ui/StatCard';
-import { getStoredSession, UserSession } from '@/lib/auth';
-import { getBaseScanAddressUrl, truncateAddress } from '@/lib/base';
+import { getRealUserSession, UserSession } from '@/lib/auth';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { getExplorerAddressUrl, getExplorerTxUrl, truncateAddress } from '@/lib/base';
+import { formatUsdc } from '@/lib/currency';
 import {
   Store,
   Terminal,
@@ -18,20 +20,68 @@ import {
   ShieldCheck,
   CheckCircle2,
   TrendingUp,
+  Clock,
 } from 'lucide-react';
+
+interface MerchantPayment {
+  id: string;
+  amount: string;
+  status: string;
+  tx_hash: string | null;
+  created_at: string;
+}
 
 export default function MerchantOverviewPage() {
   const [session, setSession] = useState<UserSession | null>(null);
+  const [totalRevenueUnits, setTotalRevenueUnits] = useState<bigint>(0n);
+  const [txCount, setTxCount] = useState<number>(0);
+  const [recentSales, setRecentSales] = useState<MerchantPayment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const supabase = createBrowserSupabaseClient();
 
   useEffect(() => {
-    setSession(getStoredSession());
-  }, []);
+    async function loadMerchantData() {
+      setIsLoading(true);
+      try {
+        const s = await getRealUserSession();
+        setSession(s);
+        if (!s || !s.merchantProfile) return;
+
+        // Fetch payments for this merchant
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('id, amount, status, tx_hash, created_at')
+          .eq('merchant_id', s.merchantProfile.id)
+          .order('created_at', { ascending: false });
+
+        if (payments) {
+          setRecentSales(payments);
+          let sum = 0n;
+          let count = 0;
+          for (const p of payments) {
+            if (p.status === 'confirmed') {
+              sum += BigInt(p.amount);
+              count++;
+            }
+          }
+          setTotalRevenueUnits(sum);
+          setTxCount(count);
+        }
+      } catch (err) {
+        console.warn('[Merchant] Load error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadMerchantData();
+  }, [supabase]);
 
   if (!session) return null;
 
-  const storeName = session.merchantProfile?.businessName || 'Apex Artisan Coffee';
-  const receivingAddress =
-    session.merchantProfile?.receivingAddress || session.smartAccountAddress;
+  const storeName = session.merchantProfile?.businessName || 'Merchant Store';
+  const receivingAddress = session.merchantProfile?.receivingAddress || session.smartAccountAddress || session.eoaAddress || '';
 
   return (
     <div className="space-y-8">
@@ -46,15 +96,19 @@ export default function MerchantOverviewPage() {
           </div>
           <p className="text-xs font-mono text-[#AAAAAA] flex items-center gap-2">
             <span>Settlement Receiving Address:</span>
-            <a
-              href={getBaseScanAddressUrl(receivingAddress)}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#5465FF] hover:underline inline-flex items-center gap-1 font-mono"
-            >
-              {truncateAddress(receivingAddress)}
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            {receivingAddress ? (
+              <a
+                href={getExplorerAddressUrl(receivingAddress)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#5465FF] hover:underline inline-flex items-center gap-1 font-mono"
+              >
+                {truncateAddress(receivingAddress)}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <span className="text-amber-400 font-mono">No payout address set</span>
+            )}
           </p>
         </div>
 
@@ -75,80 +129,86 @@ export default function MerchantOverviewPage() {
         </div>
       </div>
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Real Metrics Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           title="Settled Revenue"
-          value="$1,420.50"
-          subtitle="Net USDC Balance in Ledger"
-          icon={<DollarSign className="w-4 h-4 text-emerald-400" />}
+          value={isLoading ? 'Loading...' : `$${formatUsdc(totalRevenueUnits.toString())} USDC`}
+          subtitle="Authoritative on-chain settlement"
+          icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
         />
         <StatCard
-          title="Today's Sales"
-          value="$84.75"
-          subtitle="18 Transactions"
-          icon={<TrendingUp className="w-4 h-4 text-[#5465FF]" />}
+          title="Confirmed Transactions"
+          value={`${txCount} Sales`}
+          subtitle="Ethereum Sepolia Testnet"
+          icon={<TrendingUp className="w-5 h-5 text-[#5465FF]" />}
         />
         <StatCard
-          title="Connected Terminals"
-          value="2 Active"
-          subtitle="Counter 01 & Virtual POS"
-          icon={<Cpu className="w-4 h-4 text-amber-400" />}
-        />
-        <StatCard
-          title="Average Settlement"
-          value="< 850 ms"
-          subtitle="Base L2 Block Finality"
-          icon={<ShieldCheck className="w-4 h-4 text-emerald-400" />}
+          title="Merchant Status"
+          value={session.merchantProfile?.isActive ? 'Active' : 'Pending'}
+          subtitle="POS Register Ready"
+          icon={<Store className="w-5 h-5 text-amber-400" />}
         />
       </div>
 
-      {/* Quick Access Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-[#5465FF]/10 text-[#5465FF] border border-[#5465FF]/30">
-              <Terminal className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-sm font-mono font-bold text-[#DFE0E2]">
-                Virtual Checkout Register
-              </h3>
-              <p className="text-xs font-mono text-[#AAAAAA] mt-0.5">
-                Ring up customer purchases and accept card taps directly from your browser.
-              </p>
-            </div>
-          </div>
-          <Link href="/merchant/terminal" className="block">
-            <Button variant="primary" size="md" className="w-full">
-              Open Virtual Register
-              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-            </Button>
+      {/* Recent Merchant Transactions */}
+      <Card className="border-[#1A2E38] space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[#1A2E38]">
+          <h3 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
+            Recent Terminal Sales
+          </h3>
+          <Link
+            href="/merchant/terminal"
+            className="text-xs font-mono text-[#5465FF] hover:underline flex items-center gap-1"
+          >
+            <span>Open Register</span>
+            <ArrowRight className="w-3 h-3" />
           </Link>
-        </Card>
+        </div>
 
-        <Card className="p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30">
-              <Cpu className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-sm font-mono font-bold text-[#DFE0E2]">
-                Physical ESP32 POS Terminals
-              </h3>
-              <p className="text-xs font-mono text-[#AAAAAA] mt-0.5">
-                Provision hardware NFC counter devices and manage secure pairing tokens.
-              </p>
-            </div>
+        {recentSales.length === 0 ? (
+          <div className="py-8 text-center space-y-2">
+            <Clock className="w-6 h-6 text-[#444444] mx-auto" />
+            <p className="text-xs font-mono text-[#888888]">
+              No sales recorded on this merchant register yet. Launch the POS Register to accept taps.
+            </p>
           </div>
-          <Link href="/merchant/pos" className="block">
-            <Button variant="outline" size="md" className="w-full">
-              Configure Hardware Terminals
-              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-            </Button>
-          </Link>
-        </Card>
-      </div>
+        ) : (
+          <div className="divide-y divide-[#1A2E38]">
+            {recentSales.map((sale) => (
+              <div
+                key={sale.id}
+                className="py-3 flex items-center justify-between text-xs font-mono"
+              >
+                <div>
+                  <p className="font-bold text-[#DFE0E2]">
+                    ${formatUsdc(sale.amount)} USDC
+                  </p>
+                  <p className="text-[11px] text-[#888888]">
+                    {new Date(sale.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge variant={sale.status === 'confirmed' ? 'active' : sale.status === 'failed' ? 'revoked' : 'info'}>
+                    {sale.status.toUpperCase()}
+                  </Badge>
+                  {sale.tx_hash && (
+                    <a
+                      href={getExplorerTxUrl(sale.tx_hash)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[#5465FF] hover:underline inline-flex items-center gap-1 text-[11px]"
+                    >
+                      <span>Receipt</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

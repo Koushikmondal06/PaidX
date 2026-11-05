@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardNav } from '@/components/DashboardNav';
-import { getStoredSession, UserSession } from '@/lib/auth';
+import { getRealUserSession, getStoredSession, UserSession } from '@/lib/auth';
 
 export default function MerchantLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -11,13 +11,16 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const s = getStoredSession();
-    if (!s) {
-      router.replace('/auth');
-    } else {
-      setSession(s);
-      setIsLoading(false);
+    async function checkAuth() {
+      const s = (await getRealUserSession()) || getStoredSession();
+      if (!s) {
+        router.replace('/auth');
+      } else {
+        setSession(s);
+        setIsLoading(false);
+      }
     }
+    checkAuth();
   }, [router]);
 
   if (isLoading) {
