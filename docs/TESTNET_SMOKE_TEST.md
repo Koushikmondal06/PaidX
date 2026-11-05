@@ -123,3 +123,4 @@ Copy the deployed contract addresses into `NEXT_PUBLIC_CARD_REGISTRY_ADDRESS` an
    ```
 2. Verify response confirms `cursorAdvanced: true` and `indexer_cursors.last_block` is advanced.
 3. Verify processed events are recorded in `public.chain_events` with unique constraint enforcement on `(chain_id, tx_hash, log_index)`.
+
