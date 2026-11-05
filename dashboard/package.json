@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@metamask/smart-accounts-kit": "^2.0.0",
     "@supabase/supabase-js": "^2.119.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
@@ -18,7 +19,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "server-only": "^0.0.1",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "viem": "^2.57.16"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
