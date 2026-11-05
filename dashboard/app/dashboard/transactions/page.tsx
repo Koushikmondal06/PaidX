@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { getBaseScanTxUrl, truncateAddress } from '@/lib/base';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { getRealUserSession } from '@/lib/auth';
+import { getExplorerTxUrl, truncateAddress } from '@/lib/base';
+import { formatUsdc } from '@/lib/currency';
 import {
   DollarSign,
   ExternalLink,
@@ -14,68 +16,66 @@ import {
   Clock,
   ShieldCheck,
   Search,
+  AlertCircle,
 } from 'lucide-react';
 
-interface PaymentItem {
+interface PaymentRecord {
   id: string;
-  merchantName: string;
-  merchantAddress: string;
-  cardUid: string;
   amount: string;
-  amountWei: string;
-  status: 'settled' | 'pending' | 'failed';
-  timestamp: string;
-  txHash: string;
+  status: 'created' | 'submitted' | 'confirmed' | 'failed';
+  tx_hash: string | null;
+  block_number: number | null;
+  created_at: string;
+  merchant_id: string;
+  merchants?: {
+    business_name: string;
+    payout_address: string;
+  } | null;
 }
 
 export default function TransactionsPage() {
-  const [filter, setFilter] = useState<'all' | 'settled' | 'pending'>('all');
+  const [filter, setFilter] = useState<'all' | 'confirmed' | 'failed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const transactions: PaymentItem[] = [
-    {
-      id: 'tx_01',
-      merchantName: 'Blue Bottle Coffee',
-      merchantAddress: '0x99A371F62a34DE9aC328Ea6C7f285F540fDEB456',
-      cardUid: '4305-0129-8812',
-      amount: '$4.50 USDC',
-      amountWei: '4500000',
-      status: 'settled',
-      timestamp: '2026-11-06 01:14 UTC',
-      txHash: '0x3a5b6c7d8e9f0123456789abcdef0123456789abcdef0123456789abcdef0123',
-    },
-    {
-      id: 'tx_02',
-      merchantName: 'Subway Market Street',
-      merchantAddress: '0x1234567890123456789012345678901234567890',
-      cardUid: '4305-0129-8812',
-      amount: '$2.00 USDC',
-      amountWei: '2000000',
-      status: 'settled',
-      timestamp: '2026-11-05 22:30 UTC',
-      txHash: '0x8f7e6d5c4b3a210987654321fedcba987654321fedcba987654321fedcba9876',
-    },
-    {
-      id: 'tx_03',
-      merchantName: 'Caltrain Station Kiosk',
-      merchantAddress: '0x71C67Ed3E879C51bFa61b2e2d96c97a892789111',
-      cardUid: '4305-0129-8812',
-      amount: '$8.25 USDC',
-      amountWei: '8250000',
-      status: 'settled',
-      timestamp: '2026-11-05 18:05 UTC',
-      txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-    },
-  ];
+  const supabase = createBrowserSupabaseClient();
 
-  const filtered = transactions.filter((tx) => {
+  useEffect(() => {
+    async function loadPayments() {
+      setIsLoading(true);
+      try {
+        const session = await getRealUserSession();
+        if (!session) return;
+
+        // Fetch payments for this user joined with merchants
+        const { data, error } = await supabase
+          .from('payments')
+          .select('*, merchants(business_name, payout_address)')
+          .eq('user_id', session.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        if (data) {
+          setPayments(data as PaymentRecord[]);
+        }
+      } catch (err) {
+        console.warn('[Transactions] Fetch error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadPayments();
+  }, [supabase]);
+
+  const filtered = payments.filter((tx) => {
     if (filter !== 'all' && tx.status !== filter) return false;
-    if (
-      searchQuery &&
-      !tx.merchantName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !tx.txHash.toLowerCase().includes(searchQuery.toLowerCase())
-    ) {
-      return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const name = tx.merchants?.business_name?.toLowerCase() || '';
+      const hash = tx.tx_hash?.toLowerCase() || '';
+      if (!name.includes(q) && !hash.includes(q)) return false;
     }
     return true;
   });
@@ -86,106 +86,133 @@ export default function TransactionsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#1A2E38]">
         <div>
           <h1 className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
-            Transaction History
+            Contactless Transaction Ledger
           </h1>
-          <p className="text-xs text-[#AAAAAA] font-mono mt-1">
-            Settled retail taps & blockchain verification receipts on Base
+          <p className="text-xs font-mono text-[#AAAAAA] mt-1">
+            Real on-chain POS settlement events on Ethereum Sepolia
           </p>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex gap-1.5 p-1 bg-[#0B161B] rounded-lg border border-[#1A2E38]">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded text-xs font-mono ${
-              filter === 'all'
-                ? 'bg-[#0E1D24] text-[#DFE0E2] border border-[#5465FF]/40'
-                : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilter('settled')}
-            className={`px-3 py-1 rounded text-xs font-mono ${
-              filter === 'settled'
-                ? 'bg-[#0E1D24] text-[#DFE0E2] border border-[#5465FF]/40'
-                : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
-          >
-            Settled
-          </button>
-          <button
-            onClick={() => setFilter('pending')}
-            className={`px-3 py-1 rounded text-xs font-mono ${
-              filter === 'pending'
-                ? 'bg-[#0E1D24] text-[#DFE0E2] border border-[#5465FF]/40'
-                : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
-          >
-            Pending
-          </button>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Search by merchant or tx hash..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-64"
+          />
         </div>
       </div>
 
-      {/* Search Input */}
-      <div className="max-w-md">
-        <Input
-          placeholder="Search by merchant name or tx hash..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+      {/* Filter Tabs */}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setFilter('all')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+            filter === 'all'
+              ? 'bg-[#5465FF]/20 text-[#5465FF] border border-[#5465FF]/40'
+              : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+          }`}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilter('confirmed')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+            filter === 'confirmed'
+              ? 'bg-[#5465FF]/20 text-[#5465FF] border border-[#5465FF]/40'
+              : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+          }`}
+        >
+          Confirmed
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilter('failed')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+            filter === 'failed'
+              ? 'bg-[#5465FF]/20 text-[#5465FF] border border-[#5465FF]/40'
+              : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+          }`}
+        >
+          Failed
+        </button>
       </div>
 
-      {/* Transactions Table */}
-      <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-[#0E1D24] border-b border-[#1A2E38] text-[#888888]">
-              <tr>
-                <th className="py-3 px-6">Status</th>
-                <th className="py-3 px-6">Merchant</th>
-                <th className="py-3 px-6">Amount</th>
-                <th className="py-3 px-6">Timestamp</th>
-                <th className="py-3 px-6">Receipt / BaseScan</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1A2E38]">
-              {filtered.map((tx) => (
-                <tr key={tx.id} className="hover:bg-[#0E1D24]/40 transition-colors">
-                  <td className="py-4 px-6">
-                    <Badge variant="posted">
-                      <CheckCircle2 className="w-3 h-3 mr-1" />
-                      SETTLED
+      {/* Table Card */}
+      <Card className="border-[#1A2E38] p-0 overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-xs font-mono text-[#888888]">
+            Loading transaction ledger from Sepolia...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center space-y-2">
+            <Clock className="w-8 h-8 text-[#444444] mx-auto" />
+            <p className="text-xs font-mono text-[#888888]">
+              No transactions match your search or filter criteria.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#1A2E38]">
+            {filtered.map((tx) => (
+              <div
+                key={tx.id}
+                className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs font-mono hover:bg-[#0E1D24]/50 transition-colors"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-[#DFE0E2]">
+                      {tx.merchants?.business_name || 'Retail Merchant'}
+                    </p>
+                    <Badge
+                      variant={
+                        tx.status === 'confirmed'
+                          ? 'success'
+                          : tx.status === 'failed'
+                          ? 'danger'
+                          : 'info'
+                      }
+                    >
+                      {tx.status.toUpperCase()}
                     </Badge>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="font-bold text-[#DFE0E2]">{tx.merchantName}</div>
-                    <div className="text-[10px] text-[#888888]">
-                      To: {truncateAddress(tx.merchantAddress)}
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <div className="font-bold text-[#DFE0E2]">{tx.amount}</div>
-                    <div className="text-[10px] text-[#888888]">Raw: {tx.amountWei} units</div>
-                  </td>
-                  <td className="py-4 px-6 text-[#AAAAAA]">{tx.timestamp}</td>
-                  <td className="py-4 px-6">
+                  </div>
+                  <p className="text-[11px] text-[#666666] mt-0.5">
+                    {new Date(tx.created_at).toUTCString()}
+                    {tx.block_number && ` · Block #${tx.block_number}`}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="font-bold text-[#DFE0E2]">
+                      ${formatUsdc(tx.amount)} USDC
+                    </p>
+                    {tx.merchants?.payout_address && (
+                      <p className="text-[10px] text-[#666666]">
+                        To: {truncateAddress(tx.merchants.payout_address)}
+                      </p>
+                    )}
+                  </div>
+
+                  {tx.tx_hash ? (
                     <a
-                      href={getBaseScanTxUrl(tx.txHash)}
+                      href={getExplorerTxUrl(tx.tx_hash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[#5465FF] hover:underline inline-flex items-center gap-1 font-mono text-xs"
+                      className="p-2 rounded-lg bg-[#0E1D24] border border-[#1A2E38] text-[#5465FF] hover:border-[#5465FF]/40 inline-flex items-center gap-1"
                     >
-                      {truncateAddress(tx.txHash)}
-                      <ExternalLink className="w-3 h-3" />
+                      <span>Receipt</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  ) : (
+                    <span className="text-[10px] text-[#666666] italic">Pending</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
