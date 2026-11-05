@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from './types';
 
-let browserClient: ReturnType<typeof createClient> | null = null;
+let browserClient: ReturnType<typeof createClient<Database>> | null = null;
 
 /**
  * Creates or returns a singleton client-side Supabase client using the new publishable key.
@@ -14,7 +15,6 @@ export function createBrowserSupabaseClient() {
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 
   if (!supabaseUrl || !publishableKey) {
-    // Return dummy client or warn when env is unset during build
     if (process.env.NODE_ENV === 'development') {
       console.warn('[Supabase] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
     }
@@ -26,7 +26,7 @@ export function createBrowserSupabaseClient() {
     );
   }
 
-  browserClient = createClient(supabaseUrl, publishableKey, {
+  browserClient = createClient<Database>(supabaseUrl, publishableKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,

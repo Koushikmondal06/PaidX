@@ -1,4 +1,5 @@
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import type { Database } from '@/lib/supabase/types';
 
 export type UserRole = 'payer' | 'merchant' | 'normal_user' | 'super_admin';
 export type OnboardingStep = 'wallet_selection' | 'role_selection' | 'profile_setup' | 'completed';

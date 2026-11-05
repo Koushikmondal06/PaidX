@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from './types';
 
 // Hard runtime guard against bundling in client context
 if (typeof window !== 'undefined') {
@@ -46,7 +47,7 @@ export function createServerSupabaseClient() {
     return fetch(input, { ...init, headers });
   };
 
-  return createClient(supabaseUrl, secretKey, {
+  return createClient<Database>(supabaseUrl, secretKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

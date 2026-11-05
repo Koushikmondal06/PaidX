@@ -1,31 +1,41 @@
-export const BASE_MAINNET_CHAIN_ID = 8453;
-export const BASE_SEPOLIA_CHAIN_ID = 84532;
+/**
+ * Testnet Chain Configuration for PaidX
+ * Reads exclusively from environment variables with Ethereum Sepolia (11155111) default.
+ * Hard rule: Never hardcode chain ID or explorer URLs.
+ */
 
-export const BASE_EXPLORER_URL = 'https://basescan.org';
-export const BASE_SEPOLIA_EXPLORER_URL = 'https://sepolia.basescan.org';
+export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '11155111', 10);
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia.org';
+export const EXPLORER_URL = (process.env.NEXT_PUBLIC_EXPLORER_URL || 'https://sepolia.etherscan.io').replace(/\/$/, '');
+export const PAYMENT_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS || '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238').toLowerCase();
 
-export const BASE_SEPOLIA_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-export const BASE_MAINNET_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-
-export function getBaseScanTxUrl(txHash: string, chainId: number = BASE_MAINNET_CHAIN_ID): string {
-  const baseUrl = chainId === BASE_SEPOLIA_CHAIN_ID ? BASE_SEPOLIA_EXPLORER_URL : BASE_EXPLORER_URL;
-  return `${baseUrl}/tx/${txHash}`;
+export function getExplorerTxUrl(txHash: string): string {
+  if (!txHash) return '#';
+  return `${EXPLORER_URL}/tx/${txHash}`;
 }
 
-export function getBaseScanAddressUrl(address: string, chainId: number = BASE_MAINNET_CHAIN_ID): string {
-  const baseUrl = chainId === BASE_SEPOLIA_CHAIN_ID ? BASE_SEPOLIA_EXPLORER_URL : BASE_EXPLORER_URL;
-  return `${baseUrl}/address/${address}`;
+export function getExplorerAddressUrl(address: string): string {
+  if (!address) return '#';
+  return `${EXPLORER_URL}/address/${address}`;
+}
+
+export function getBaseScanTxUrl(txHash: string): string {
+  return getExplorerTxUrl(txHash);
+}
+
+export function getBaseScanAddressUrl(address: string): string {
+  return getExplorerAddressUrl(address);
 }
 
 export function generateEip681PaymentUri(
   recipientAddress: string,
   amountWei: string | bigint,
-  chainId: number = BASE_MAINNET_CHAIN_ID
+  chainId: number = CHAIN_ID
 ): string {
   return `ethereum:${recipientAddress}@${chainId}?value=${amountWei.toString()}`;
 }
 
-export function truncateAddress(address: string): string {
-  if (!address || address.length < 10) return address;
+export function truncateAddress(address?: string | null): string {
+  if (!address || address.length < 10) return address || '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
