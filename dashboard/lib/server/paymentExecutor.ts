@@ -1,17 +1,14 @@
 import 'server-only';
 import {
-  createPublicClient,
   createWalletClient,
-  http,
   encodeFunctionData,
   type Hex,
   type Address,
 } from 'viem';
-import { sepolia } from '@/lib/chain';
+import { getServerPublicClient, getServerTransport, sepolia, CHAIN_ID } from '@/lib/chain';
 import { getSmartAccountsEnvironment, contracts, ExecutionMode } from '@metamask/smart-accounts-kit';
 import { getSessionAccount } from './sessionAccount';
 import { ERC20_ABI } from '@/lib/contracts';
-import { CHAIN_ID } from '@/lib/base';
 
 export interface PaymentExecutionResult {
   success: boolean;
@@ -37,15 +34,6 @@ export async function executeDelegationRedemption({
   amount: bigint;
   grantPayload: any;
 }): Promise<PaymentExecutionResult> {
-  const rpcUrl = process.env.RPC_URL_SERVER || process.env.NEXT_PUBLIC_RPC_URL;
-  if (!rpcUrl) {
-    return {
-      success: false,
-      errorCode: 'RPC_UNCONFIGURED',
-      failureReason: 'Server RPC endpoint (RPC_URL_SERVER or NEXT_PUBLIC_RPC_URL) is not configured',
-    };
-  }
-
   let sessionAccount;
   try {
     sessionAccount = getSessionAccount();
@@ -58,16 +46,23 @@ export async function executeDelegationRedemption({
     };
   }
 
-  const publicClient = createPublicClient({
-    chain: sepolia,
-    transport: http(rpcUrl),
-  });
-
-  const walletClient = createWalletClient({
-    account: sessionAccount,
-    chain: sepolia,
-    transport: http(rpcUrl),
-  });
+  let publicClient;
+  let walletClient;
+  try {
+    publicClient = getServerPublicClient();
+    walletClient = createWalletClient({
+      account: sessionAccount,
+      chain: sepolia,
+      transport: getServerTransport(),
+    });
+  } catch (rpcErr: unknown) {
+    const msg = rpcErr instanceof Error ? rpcErr.message : 'RPC transport configuration error';
+    return {
+      success: false,
+      errorCode: 'RPC_UNCONFIGURED',
+      failureReason: msg,
+    };
+  }
 
   const env = getSmartAccountsEnvironment(CHAIN_ID);
   const delegationManagerAddress = (env?.DelegationManager || '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3') as Address;

@@ -13,8 +13,8 @@ import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getExplorerTxUrl, getExplorerAddressUrl, truncateAddress, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
 import { formatUsdc } from '@/lib/currency';
 import { ERC20_ABI } from '@/lib/contracts';
-import { createPublicClient, http, formatEther, type Address } from 'viem';
-import { sepolia } from '@/lib/chain';
+import { getBrowserPublicClient } from '@/lib/chain';
+import { formatEther, type Address } from 'viem';
 import {
   CreditCard,
   Sliders,
@@ -69,10 +69,7 @@ export default function UserDashboardOverviewPage() {
       // 1. Fetch on-chain balances if wallet is linked
       if (walletAddress) {
         try {
-          const publicClient = createPublicClient({
-            chain: sepolia,
-            transport: http(process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia.org'),
-          });
+          const publicClient = getBrowserPublicClient();
 
           // Fetch Sepolia USDC balance
           const tokenBal = await publicClient.readContract({

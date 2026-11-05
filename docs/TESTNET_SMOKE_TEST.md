@@ -17,8 +17,8 @@ Ensure `.env.local` inside `dashboard/` contains:
 ```env
 NEXT_PUBLIC_APP_ENV=testnet
 NEXT_PUBLIC_CHAIN_ID=11155111
-NEXT_PUBLIC_RPC_URL=https://rpc.sepolia.org
-RPC_URL_SERVER=https://rpc.sepolia.org
+NEXT_PUBLIC_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<YOUR_KEY>
+RPC_URL_SERVER=https://eth-sepolia.g.alchemy.com/v2/<YOUR_KEY>
 NEXT_PUBLIC_EXPLORER_URL=https://sepolia.etherscan.io
 NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS=0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
 

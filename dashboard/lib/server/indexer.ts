@@ -1,14 +1,11 @@
 import 'server-only';
 import {
-  createPublicClient,
-  http,
   parseAbiItem,
   type Address,
   type Hex,
 } from 'viem';
-import { sepolia } from '@/lib/chain';
+import { getServerPublicClient, CHAIN_ID } from '@/lib/chain';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { CHAIN_ID } from '@/lib/base';
 import { CARD_REGISTRY_ABI, MERCHANT_REGISTRY_ABI, ERC20_ABI } from '@/lib/contracts';
 import type { Json } from '@/lib/supabase/types';
 
@@ -27,16 +24,8 @@ export interface IndexerRunResult {
  * Runs an idempotent sync cycle across Sepolia event logs.
  */
 export async function runIndexerSync(): Promise<IndexerRunResult> {
-  const rpcUrl = process.env.RPC_URL_SERVER || process.env.NEXT_PUBLIC_RPC_URL;
-  if (!rpcUrl) {
-    throw new Error('[Indexer] Missing RPC endpoint for indexer');
-  }
-
   const supabase = createServerSupabaseClient();
-  const publicClient = createPublicClient({
-    chain: sepolia,
-    transport: http(rpcUrl),
-  });
+  const publicClient = getServerPublicClient();
 
   // 1. Get or create indexer cursor
   const { data: cursor } = await supabase

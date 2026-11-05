@@ -9,9 +9,9 @@ import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getRealUserSession, saveSession, UserSession, UserRole } from '@/lib/auth';
-import { CHAIN_ID, PAYMENT_TOKEN_ADDRESS, truncateAddress } from '@/lib/base';
-import { createPublicClient, http, type Address } from 'viem';
-import { sepolia } from '@/lib/chain';
+import { PAYMENT_TOKEN_ADDRESS, truncateAddress } from '@/lib/base';
+import { getBrowserPublicClient, CHAIN_ID } from '@/lib/chain';
+import type { Address } from 'viem';
 import {
   Wallet,
   CreditCard,
@@ -23,6 +23,7 @@ import {
   Link2,
   ShieldCheck,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function OnboardingPage() {
@@ -37,7 +38,9 @@ export default function OnboardingPage() {
   const [walletChoice, setWalletChoice] = useState<'create' | 'link'>('create');
   const [isWalletConnecting, setIsWalletConnecting] = useState(false);
   const [connectedEoa, setConnectedEoa] = useState<string | null>(null);
-  const [isSmartAccountUpgraded, setIsSmartAccountUpgraded] = useState(false);
+  const [smartAccountStatus, setSmartAccountStatus] = useState<'upgraded' | 'eoa' | 'unknown'>('unknown');
+  const [isCheckingBytecode, setIsCheckingBytecode] = useState(false);
+  const [networkWarning, setNetworkWarning] = useState<string | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
 
   // Step 2: Role & Profile state
@@ -72,9 +75,80 @@ export default function OnboardingPage() {
     loadSession();
   }, [router]);
 
+  /**
+   * Resiliently inspects bytecode on Sepolia to verify if upgraded to smart account.
+   * Never crashes the page and never blocks the connection.
+   */
+  const checkBytecodeStatus = async (address: string): Promise<boolean | null> => {
+    setIsCheckingBytecode(true);
+    setNetworkWarning(null);
+
+    try {
+      const publicClient = getBrowserPublicClient();
+      const bytecode = await publicClient.getBytecode({
+        address: address as Address,
+      });
+
+      const isUpgraded = Boolean(bytecode && bytecode !== '0x');
+      setSmartAccountStatus(isUpgraded ? 'upgraded' : 'eoa');
+      return isUpgraded;
+    } catch (err: unknown) {
+      console.warn('[Smart Account Network Check Notice]:', err);
+      setSmartAccountStatus('unknown');
+      setNetworkWarning("Couldn't check your account on the network. Retry");
+      return null;
+    } finally {
+      setIsCheckingBytecode(false);
+    }
+  };
+
+  /**
+   * Switches connected MetaMask wallet to Sepolia (11155111) if not already on it.
+   */
+  const ensureSepoliaChain = async () => {
+    // @ts-expect-error window.ethereum
+    if (!window.ethereum) return;
+
+    // @ts-expect-error window.ethereum
+    const currentChainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
+    const currentChainId = parseInt(currentChainIdHex, 16);
+
+    if (currentChainId !== CHAIN_ID) {
+      const sepoliaHex = `0x${CHAIN_ID.toString(16)}`;
+      try {
+        // @ts-expect-error window.ethereum
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: sepoliaHex }],
+        });
+      } catch (switchError: any) {
+        // 4902 indicates that the chain has not been added to MetaMask
+        if (switchError?.code === 4902 || switchError?.data?.originalError?.code === 4902) {
+          const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || '';
+          // @ts-expect-error window.ethereum
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: sepoliaHex,
+                chainName: 'Ethereum Sepolia',
+                nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+                rpcUrls: rpcUrl ? [rpcUrl] : [],
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+              },
+            ],
+          });
+        } else {
+          throw new Error(`Please switch MetaMask to Ethereum Sepolia (Chain ID: ${CHAIN_ID})`);
+        }
+      }
+    }
+  };
+
   // Connect MetaMask EOA & Detect Smart Account Status
   const handleConnectWallet = async () => {
     setWalletError(null);
+    setNetworkWarning(null);
     setIsWalletConnecting(true);
 
     try {
@@ -92,21 +166,14 @@ export default function OnboardingPage() {
         throw new Error('No accounts selected in MetaMask');
       }
 
+      // Ensure user is on Ethereum Sepolia
+      await ensureSepoliaChain();
+
       const eoa = accounts[0].toLowerCase();
       setConnectedEoa(eoa);
 
-      // Check on-chain bytecode on Sepolia to verify if upgraded to smart account
-      const publicClient = createPublicClient({
-        chain: sepolia,
-        transport: http(process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia.org'),
-      });
-
-      const bytecode = await publicClient.getBytecode({
-        address: eoa as Address,
-      });
-
-      const isUpgraded = Boolean(bytecode && bytecode !== '0x');
-      setIsSmartAccountUpgraded(isUpgraded);
+      // Inspect bytecode resiliently (non-blocking)
+      const isUpgraded = await checkBytecodeStatus(eoa);
 
       // Persist wallet record in Supabase
       if (session) {
@@ -117,7 +184,7 @@ export default function OnboardingPage() {
             chain_id: CHAIN_ID,
             kind: isUpgraded ? 'metamask_smart_account' : 'eoa',
             is_primary: true,
-            smart_account_upgraded: isUpgraded,
+            smart_account_upgraded: Boolean(isUpgraded),
           },
           { onConflict: 'chain_id, address' }
         );
@@ -378,10 +445,43 @@ export default function OnboardingPage() {
                   {truncateAddress(connectedEoa)}
                 </p>
               </div>
-              <Badge variant={isSmartAccountUpgraded ? 'active' : 'default'}>
-                {isSmartAccountUpgraded ? 'Smart Account Deployed' : 'Standard EOA'}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant={
+                    smartAccountStatus === 'upgraded'
+                      ? 'active'
+                      : smartAccountStatus === 'eoa'
+                      ? 'default'
+                      : 'warning'
+                  }
+                >
+                  {smartAccountStatus === 'upgraded'
+                    ? 'Smart Account Deployed'
+                    : smartAccountStatus === 'eoa'
+                    ? 'Standard EOA'
+                    : 'Status Unknown'}
+                </Badge>
+              </div>
             </div>
+
+            {/* Non-blocking network check warning banner with retry */}
+            {networkWarning && connectedEoa && (
+              <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-900/60 flex items-center justify-between text-xs font-mono text-amber-300">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{networkWarning}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => checkBytecodeStatus(connectedEoa)}
+                  disabled={isCheckingBytecode}
+                  className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-900 text-amber-200 inline-flex items-center gap-1 text-[11px] font-mono"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isCheckingBytecode ? 'animate-spin' : ''}`} />
+                  <span>Retry</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleProfileSubmit} className="space-y-5">
               {/* Role Cards */}

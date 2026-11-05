@@ -5,7 +5,7 @@
  */
 
 export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '11155111', 10);
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia.org';
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || '';
 export const EXPLORER_URL = (process.env.NEXT_PUBLIC_EXPLORER_URL || 'https://sepolia.etherscan.io').replace(/\/$/, '');
 export const PAYMENT_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS || '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238').toLowerCase();
 
