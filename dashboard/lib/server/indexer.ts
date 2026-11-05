@@ -186,3 +186,4 @@ export async function runIndexerSync(): Promise<IndexerRunResult> {
     cursorAdvanced: true,
   };
 }
+

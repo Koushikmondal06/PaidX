@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       profiles: {
@@ -15,7 +15,7 @@ export interface Database {
           display_name: string | null;
           email: string | null;
           phone: string | null;
-          role: 'user' | 'merchant' | 'admin';
+          role: string;
           created_at: string;
           updated_at: string;
         };
@@ -24,7 +24,7 @@ export interface Database {
           display_name?: string | null;
           email?: string | null;
           phone?: string | null;
-          role?: 'user' | 'merchant' | 'admin';
+          role?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -33,10 +33,11 @@ export interface Database {
           display_name?: string | null;
           email?: string | null;
           phone?: string | null;
-          role?: 'user' | 'merchant' | 'admin';
+          role?: string;
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       wallets: {
         Row: {
@@ -44,7 +45,7 @@ export interface Database {
           user_id: string;
           address: string;
           chain_id: number;
-          kind: 'eoa' | 'metamask_smart_account';
+          kind: string;
           is_primary: boolean;
           smart_account_upgraded: boolean;
           created_at: string;
@@ -55,7 +56,7 @@ export interface Database {
           user_id: string;
           address: string;
           chain_id: number;
-          kind: 'eoa' | 'metamask_smart_account';
+          kind: string;
           is_primary?: boolean;
           smart_account_upgraded?: boolean;
           created_at?: string;
@@ -66,12 +67,13 @@ export interface Database {
           user_id?: string;
           address?: string;
           chain_id?: number;
-          kind?: 'eoa' | 'metamask_smart_account';
+          kind?: string;
           is_primary?: boolean;
           smart_account_upgraded?: boolean;
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       permissions: {
         Row: {
@@ -83,12 +85,12 @@ export interface Database {
           token_address: string;
           permission_type: string;
           period_seconds: number;
-          limit_per_period: string; // numeric(78,0)
-          remaining_in_period: string; // numeric(78,0)
+          limit_per_period: string;
+          remaining_in_period: string;
           current_period_start: string;
           valid_after: string;
           valid_until: string;
-          status: 'active' | 'revoked' | 'expired';
+          status: string;
           grant_payload: Json;
           revocation_tx_hash: string | null;
           created_at: string;
@@ -108,8 +110,8 @@ export interface Database {
           current_period_start?: string;
           valid_after: string;
           valid_until: string;
-          status?: 'active' | 'revoked' | 'expired';
-          grant_payload: Json;
+          status?: string;
+          grant_payload?: Json;
           revocation_tx_hash?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -128,19 +130,20 @@ export interface Database {
           current_period_start?: string;
           valid_after?: string;
           valid_until?: string;
-          status?: 'active' | 'revoked' | 'expired';
+          status?: string;
           grant_payload?: Json;
           revocation_tx_hash?: string | null;
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       cards: {
         Row: {
           id: string;
           user_id: string;
           uid_hash: string;
-          status: 'active' | 'frozen' | 'revoked';
+          status: string;
           registration_tx_hash: string | null;
           registered_at_block: number | null;
           created_at: string;
@@ -150,7 +153,7 @@ export interface Database {
           id?: string;
           user_id: string;
           uid_hash: string;
-          status?: 'active' | 'frozen' | 'revoked';
+          status?: string;
           registration_tx_hash?: string | null;
           registered_at_block?: number | null;
           created_at?: string;
@@ -160,12 +163,13 @@ export interface Database {
           id?: string;
           user_id?: string;
           uid_hash?: string;
-          status?: 'active' | 'frozen' | 'revoked';
+          status?: string;
           registration_tx_hash?: string | null;
           registered_at_block?: number | null;
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       merchants: {
         Row: {
@@ -204,6 +208,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       payments: {
         Row: {
@@ -213,10 +218,10 @@ export interface Database {
           user_id: string;
           card_id: string;
           permission_id: string;
-          amount: string; // numeric(78,0)
+          amount: string;
           token_address: string;
           chain_id: number;
-          status: 'created' | 'submitted' | 'confirmed' | 'failed';
+          status: string;
           user_op_hash: string | null;
           tx_hash: string | null;
           block_number: number | null;
@@ -234,7 +239,7 @@ export interface Database {
           amount: string;
           token_address: string;
           chain_id: number;
-          status?: 'created' | 'submitted' | 'confirmed' | 'failed';
+          status?: string;
           user_op_hash?: string | null;
           tx_hash?: string | null;
           block_number?: number | null;
@@ -252,7 +257,7 @@ export interface Database {
           amount?: string;
           token_address?: string;
           chain_id?: number;
-          status?: 'created' | 'submitted' | 'confirmed' | 'failed';
+          status?: string;
           user_op_hash?: string | null;
           tx_hash?: string | null;
           block_number?: number | null;
@@ -260,6 +265,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       chain_events: {
         Row: {
@@ -284,6 +290,18 @@ export interface Database {
           payload: Json;
           created_at?: string;
         };
+        Update: {
+          id?: string;
+          chain_id?: number;
+          tx_hash?: string;
+          log_index?: number;
+          event_name?: string;
+          contract_address?: string;
+          block_number?: number;
+          payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
       };
       indexer_cursors: {
         Row: {
@@ -304,7 +322,20 @@ export interface Database {
           last_block?: number;
           updated_at?: string;
         };
+        Relationships: [];
       };
     };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
   };
-}
+};

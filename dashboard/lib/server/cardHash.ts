@@ -21,3 +21,4 @@ export function computeCardUidHash(rawUid: string): `0x${string}` {
   const payload = `${normalizedUid}:${salt}`;
   return keccak256(stringToHex(payload));
 }
+
