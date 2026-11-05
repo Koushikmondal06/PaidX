@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { PaidXLogo } from './ui/PaidXLogo';
 import { Button } from './ui/Button';
 import { truncateAddress } from '@/lib/base';
-import { getStoredSession, clearSession, UserSession } from '@/lib/auth';
+import { getStoredSession, signOutReal, UserSession } from '@/lib/auth';
 import {
   LayoutDashboard,
   CreditCard,
@@ -23,8 +23,8 @@ export function DashboardNav({ session }: { session?: UserSession | null }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const handleSignOut = () => {
-    clearSession();
+  const handleSignOut = async () => {
+    await signOutReal();
     router.push('/auth');
     router.refresh();
   };
@@ -94,13 +94,13 @@ export function DashboardNav({ session }: { session?: UserSession | null }) {
           )}
 
           {/* Connected Address Pill */}
-          {session?.smartAccountAddress && (
+          {(session?.smartAccountAddress || session?.eoaAddress) && (
             <div className="hidden lg:flex flex-col items-end px-2.5 py-1 rounded-lg bg-[#0B161B] border border-[#1A2E38]">
               <span className="text-[11px] font-mono text-[#DFE0E2] flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                {truncateAddress(session.smartAccountAddress)}
+                {truncateAddress(session.smartAccountAddress || session.eoaAddress)}
               </span>
-              <span className="text-[9px] font-mono text-emerald-400">Base Mainnet (8453)</span>
+              <span className="text-[9px] font-mono text-emerald-400">Sepolia (11155111)</span>
             </div>
           )}
 
