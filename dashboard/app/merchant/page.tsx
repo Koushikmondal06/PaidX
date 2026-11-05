@@ -132,24 +132,21 @@ export default function MerchantOverviewPage() {
       {/* Real Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
-          label="Settled Revenue"
+          title="Settled Revenue"
           value={isLoading ? 'Loading...' : `$${formatUsdc(totalRevenueUnits.toString())} USDC`}
-          change="Authoritative on-chain settlement"
-          changeType="positive"
+          subtitle="Authoritative on-chain settlement"
           icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
         />
         <StatCard
-          label="Confirmed Transactions"
+          title="Confirmed Transactions"
           value={`${txCount} Sales`}
-          change="Ethereum Sepolia Testnet"
-          changeType="neutral"
+          subtitle="Ethereum Sepolia Testnet"
           icon={<TrendingUp className="w-5 h-5 text-[#5465FF]" />}
         />
         <StatCard
-          label="Merchant Status"
+          title="Merchant Status"
           value={session.merchantProfile?.isActive ? 'Active' : 'Pending'}
-          change="POS Register Ready"
-          changeType={session.merchantProfile?.isActive ? 'positive' : 'negative'}
+          subtitle="POS Register Ready"
           icon={<Store className="w-5 h-5 text-amber-400" />}
         />
       </div>
@@ -192,7 +189,7 @@ export default function MerchantOverviewPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={sale.status === 'confirmed' ? 'success' : sale.status === 'failed' ? 'danger' : 'info'}>
+                  <Badge variant={sale.status === 'confirmed' ? 'active' : sale.status === 'failed' ? 'revoked' : 'info'}>
                     {sale.status.toUpperCase()}
                   </Badge>
                   {sale.tx_hash && (

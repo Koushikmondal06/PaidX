@@ -57,7 +57,7 @@ export default function TransactionsPage() {
 
         if (error) throw error;
         if (data) {
-          setPayments(data as PaymentRecord[]);
+          setPayments(data as unknown as PaymentRecord[]);
         }
       } catch (err) {
         console.warn('[Transactions] Fetch error:', err);
@@ -168,9 +168,9 @@ export default function TransactionsPage() {
                     <Badge
                       variant={
                         tx.status === 'confirmed'
-                          ? 'success'
+                          ? 'active'
                           : tx.status === 'failed'
-                          ? 'danger'
+                          ? 'revoked'
                           : 'info'
                       }
                     >

@@ -378,7 +378,7 @@ export default function OnboardingPage() {
                   {truncateAddress(connectedEoa)}
                 </p>
               </div>
-              <Badge variant={isSmartAccountUpgraded ? 'success' : 'default'}>
+              <Badge variant={isSmartAccountUpgraded ? 'active' : 'default'}>
                 {isSmartAccountUpgraded ? 'Smart Account Deployed' : 'Standard EOA'}
               </Badge>
             </div>

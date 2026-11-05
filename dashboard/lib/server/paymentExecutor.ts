@@ -8,7 +8,7 @@ import {
   type Address,
 } from 'viem';
 import { sepolia } from 'viem/chains';
-import { getSmartAccountsEnvironment, contracts } from '@metamask/smart-accounts-kit';
+import { getSmartAccountsEnvironment, contracts, ExecutionMode } from '@metamask/smart-accounts-kit';
 import { getSessionAccount } from './sessionAccount';
 import { ERC20_ABI } from '@/lib/contracts';
 import { CHAIN_ID } from '@/lib/base';
@@ -93,7 +93,7 @@ export async function executeDelegationRedemption({
       // Encode redeemDelegations call using MetaMask Smart Accounts Kit contracts
       const redeemCalldata = contracts.DelegationManager.encode.redeemDelegations({
         delegations: [[signedDelegation]],
-        modes: [0], // ExecutionMode.Single
+        modes: [ExecutionMode.SingleDefault],
         executions: [
           [
             {

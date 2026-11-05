@@ -211,26 +211,23 @@ export default function UserDashboardOverviewPage() {
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
-          label="Sepolia USDC Balance"
+          title="Sepolia USDC Balance"
           value={isLoadingBalance ? 'Loading...' : `$${usdcBalance} USDC`}
-          change={`${ethBalance} ETH for Gas`}
-          changeType="neutral"
+          subtitle={`${ethBalance} ETH for Gas`}
           icon={<DollarSign className="w-5 h-5 text-[#5465FF]" />}
         />
 
         <StatCard
-          label="Active Physical Cards"
+          title="Active Physical Cards"
           value={`${cardsCount} Card${cardsCount === 1 ? '' : 's'}`}
-          change="Contactless Retail Ready"
-          changeType="positive"
+          subtitle="Contactless Retail Ready"
           icon={<Radio className="w-5 h-5 text-emerald-400" />}
         />
 
         <StatCard
-          label="Remaining Spending Limit"
+          title="Remaining Spending Limit"
           value={`$${remainingUsdc.toFixed(2)} USDC`}
-          change={`${percentSpent}% of $${dailyLimitUsdc.toFixed(2)} cap used`}
-          changeType={percentSpent > 80 ? 'negative' : 'positive'}
+          subtitle={`${percentSpent}% of $${dailyLimitUsdc.toFixed(2)} cap used`}
           icon={<Sliders className="w-5 h-5 text-indigo-400" />}
         />
       </div>
@@ -313,7 +310,7 @@ export default function UserDashboardOverviewPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={p.status === 'confirmed' ? 'success' : p.status === 'failed' ? 'danger' : 'info'}>
+                  <Badge variant={p.status === 'confirmed' ? 'active' : p.status === 'failed' ? 'revoked' : 'info'}>
                     {p.status.toUpperCase()}
                   </Badge>
                   {p.tx_hash && (

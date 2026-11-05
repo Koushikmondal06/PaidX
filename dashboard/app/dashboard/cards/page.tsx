@@ -75,7 +75,7 @@ export default function CardsAndLimitsPage() {
         .eq('user_id', s.id)
         .order('created_at', { ascending: false });
 
-      if (cardsData) setCards(cardsData);
+      if (cardsData) setCards(cardsData as unknown as CardRow[]);
 
       // 2. Fetch active permission
       const { data: permData } = await supabase
@@ -87,7 +87,7 @@ export default function CardsAndLimitsPage() {
         .limit(1)
         .maybeSingle();
 
-      setActivePermission(permData || null);
+      setActivePermission((permData as unknown as PermissionRow) || null);
     } catch (err: unknown) {
       console.warn('[Cards] Load error:', err);
     } finally {
@@ -281,7 +281,7 @@ export default function CardsAndLimitsPage() {
                     </div>
                   </div>
 
-                  <Badge variant={card.status === 'active' ? 'success' : 'danger'}>
+                  <Badge variant={card.status === 'active' ? 'active' : 'frozen'}>
                     {card.status.toUpperCase()}
                   </Badge>
                 </div>
