@@ -8,8 +8,13 @@ import { Badge } from '@/components/ui/Badge';
 import { StatCard } from '@/components/ui/StatCard';
 import { Modal } from '@/components/ui/Modal';
 import { QrCodeDisplay } from '@/components/ui/QrCodeDisplay';
-import { getStoredSession, UserSession } from '@/lib/auth';
-import { getBaseScanTxUrl, getBaseScanAddressUrl, truncateAddress } from '@/lib/base';
+import { getRealUserSession, UserSession } from '@/lib/auth';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { getExplorerTxUrl, getExplorerAddressUrl, truncateAddress, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
+import { formatUsdc } from '@/lib/currency';
+import { ERC20_ABI } from '@/lib/contracts';
+import { createPublicClient, http, formatEther, type Address } from 'viem';
+import { sepolia } from 'viem/chains';
 import {
   CreditCard,
   Sliders,
@@ -25,52 +30,131 @@ import {
   Zap,
 } from 'lucide-react';
 
+interface PaymentRow {
+  id: string;
+  amount: string;
+  status: string;
+  tx_hash: string | null;
+  created_at: string;
+  merchant_id: string;
+}
+
 export default function UserDashboardOverviewPage() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [showDepositModal, setShowDepositModal] = useState(false);
 
-  // Spending limits state
-  const dailyLimitUsdc = 25.0;
-  const spentTodayUsdc = 6.5;
-  const remainingUsdc = dailyLimitUsdc - spentTodayUsdc;
-  const percentSpent = Math.round((spentTodayUsdc / dailyLimitUsdc) * 100);
+  // Real Balances
+  const [usdcBalance, setUsdcBalance] = useState<string>('0.00');
+  const [ethBalance, setEthBalance] = useState<string>('0.0000');
+  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
 
-  // Mock transactions
-  const recentPayments = [
-    {
-      id: 'tx_8453_01',
-      merchantName: 'Blue Bottle Coffee',
-      amount: '$4.50 USDC',
-      amountWei: '4500000',
-      status: 'settled',
-      timestamp: '12 minutes ago',
-      txHash: '0x3a5b6c7d8e9f0123456789abcdef0123456789abcdef0123456789abcdef0123',
-    },
-    {
-      id: 'tx_8453_02',
-      merchantName: 'Subway Market Street',
-      amount: '$2.00 USDC',
-      amountWei: '2000000',
-      status: 'settled',
-      timestamp: '3 hours ago',
-      txHash: '0x8f7e6d5c4b3a210987654321fedcba987654321fedcba987654321fedcba9876',
-    },
-    {
-      id: 'tx_8453_03',
-      merchantName: 'Caltrain Station Kiosk',
-      amount: '$8.25 USDC',
-      amountWei: '8250000',
-      status: 'settled',
-      timestamp: 'Yesterday',
-      txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-    },
-  ];
+  // Real Payments & Cards
+  const [recentPayments, setRecentPayments] = useState<PaymentRow[]>([]);
+  const [cardsCount, setCardsCount] = useState<number>(0);
+
+  // Real Limits from permissions
+  const [dailyLimitUsdc, setDailyLimitUsdc] = useState<number>(0);
+  const [remainingUsdc, setRemainingUsdc] = useState<number>(0);
+
+  const supabase = createBrowserSupabaseClient();
 
   useEffect(() => {
-    setSession(getStoredSession());
-  }, []);
+    async function loadData() {
+      const s = await getRealUserSession();
+      setSession(s);
+      if (!s) return;
+
+      const walletAddress = s.smartAccountAddress || s.eoaAddress;
+
+      // 1. Fetch on-chain balances if wallet is linked
+      if (walletAddress) {
+        try {
+          const publicClient = createPublicClient({
+            chain: sepolia,
+            transport: http(process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia.org'),
+          });
+
+          // Fetch Sepolia USDC balance
+          const tokenBal = await publicClient.readContract({
+            address: PAYMENT_TOKEN_ADDRESS as Address,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [walletAddress as Address],
+          });
+          setUsdcBalance(formatUsdc(tokenBal.toString()));
+
+          // Fetch Sepolia native ETH balance for gas awareness
+          const ethBal = await publicClient.getBalance({
+            address: walletAddress as Address,
+          });
+          setEthBalance(Number(formatEther(ethBal)).toFixed(4));
+        } catch (balErr) {
+          console.warn('[Balance] On-chain balance query notice:', balErr);
+        } finally {
+          setIsLoadingBalance(false);
+        }
+      } else {
+        setIsLoadingBalance(false);
+      }
+
+      // 2. Fetch real recent payments from public.payments
+      try {
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('id, amount, status, tx_hash, created_at, merchant_id')
+          .eq('user_id', s.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (payments) {
+          setRecentPayments(payments);
+        }
+      } catch (payErr) {
+        console.warn('[Payments] DB query notice:', payErr);
+      }
+
+      // 3. Fetch active cards count
+      try {
+        const { count } = await supabase
+          .from('cards')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', s.id);
+
+        setCardsCount(count || 0);
+      } catch (cErr) {
+        console.warn('[Cards] DB query notice:', cErr);
+      }
+
+      // 4. Fetch active permissions limit
+      try {
+        const { data: perm } = await supabase
+          .from('permissions')
+          .select('limit_per_period, remaining_in_period')
+          .eq('user_id', s.id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (perm) {
+          const limit = Number(BigInt(perm.limit_per_period || '0') / 1_000_000n);
+          const remaining = Number(BigInt(perm.remaining_in_period || '0') / 1_000_000n);
+          setDailyLimitUsdc(limit);
+          setRemainingUsdc(remaining);
+        }
+      } catch (permErr) {
+        console.warn('[Permission] DB query notice:', permErr);
+      }
+    }
+
+    loadData();
+  }, [supabase]);
 
   if (!session) return null;
+
+  const walletAddr = session.smartAccountAddress || session.eoaAddress || '';
+  const spentToday = Math.max(0, dailyLimitUsdc - remainingUsdc);
+  const percentSpent = dailyLimitUsdc > 0 ? Math.round((spentToday / dailyLimitUsdc) * 100) : 0;
 
   return (
     <div className="space-y-8">
@@ -86,235 +170,192 @@ export default function UserDashboardOverviewPage() {
             </Badge>
           </div>
           <p className="text-xs font-mono text-[#AAAAAA] flex items-center gap-2">
-            <span>Smart Account:</span>
-            <a
-              href={getBaseScanAddressUrl(session.smartAccountAddress)}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#5465FF] hover:underline inline-flex items-center gap-1 font-mono"
-            >
-              {truncateAddress(session.smartAccountAddress)}
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            <span>Settlement Wallet:</span>
+            {walletAddr ? (
+              <a
+                href={getExplorerAddressUrl(walletAddr)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#5465FF] hover:underline inline-flex items-center gap-1 font-mono"
+              >
+                {truncateAddress(walletAddr)}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <span className="text-amber-400 font-mono">No wallet linked yet</span>
+            )}
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setShowDepositModal(true)}
             className="font-mono text-xs"
+            disabled={!walletAddr}
           >
             <QrCode className="w-3.5 h-3.5 mr-1.5 text-[#5465FF]" />
-            Deposit Funds
+            <span>Deposit USDC</span>
           </Button>
 
           <Link href="/dashboard/cards">
             <Button variant="primary" size="sm" className="font-mono text-xs">
-              <Sliders className="w-3.5 h-3.5 mr-1.5" />
-              Manage Limits
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
+              <span>Link NFC Card</span>
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* Stats & Balances Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
-          title="USDC Balance"
-          value="$145.80"
-          subtitle="Ready for NFC Card Tap"
-          icon={<DollarSign className="w-4 h-4" />}
+          label="Sepolia USDC Balance"
+          value={isLoadingBalance ? 'Loading...' : `$${usdcBalance} USDC`}
+          change={`${ethBalance} ETH for Gas`}
+          changeType="neutral"
+          icon={<DollarSign className="w-5 h-5 text-[#5465FF]" />}
         />
+
         <StatCard
-          title="Base ETH Balance"
-          value="0.0350 ETH"
-          subtitle="Base Mainnet (8453)"
-          icon={<Zap className="w-4 h-4 text-emerald-400" />}
+          label="Active Physical Cards"
+          value={`${cardsCount} Card${cardsCount === 1 ? '' : 's'}`}
+          change="Contactless Retail Ready"
+          changeType="positive"
+          icon={<Radio className="w-5 h-5 text-emerald-400" />}
         />
+
         <StatCard
-          title="Daily Remaining"
-          value={`$${remainingUsdc.toFixed(2)}`}
-          subtitle={`of $${dailyLimitUsdc.toFixed(2)} daily limit`}
-          icon={<Clock className="w-4 h-4 text-[#5465FF]" />}
-        />
-        <StatCard
-          title="Active Physical Cards"
-          value="1 Card"
-          subtitle="Black Matte (UID: 4305-0129)"
-          icon={<CreditCard className="w-4 h-4 text-[#EB5160]" />}
+          label="Remaining Spending Limit"
+          value={`$${remainingUsdc.toFixed(2)} USDC`}
+          change={`${percentSpent}% of $${dailyLimitUsdc.toFixed(2)} cap used`}
+          changeType={percentSpent > 80 ? 'negative' : 'positive'}
+          icon={<Sliders className="w-5 h-5 text-indigo-400" />}
         />
       </div>
 
-      {/* Daily Spending Limit Progress Bar */}
-      <Card className="p-6 bg-gradient-to-r from-[#0B161B] to-[#0E1D24] border-[#1A2E38]">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-          <div>
-            <h3 className="text-sm font-mono font-bold text-[#DFE0E2] flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-[#5465FF]" />
-              Today's Spending Delegation
-            </h3>
-            <p className="text-xs font-mono text-[#AAAAAA] mt-0.5">
-              Enforced on-chain by ERC-7710 Caveat Enforcers • Resets at 00:00 UTC
+      {/* Spending Limits Progress Section */}
+      {dailyLimitUsdc > 0 && (
+        <Card className="border-[#1A2E38] space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-[#5465FF]" />
+              <h3 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
+                ERC-7715 Periodic Spending Delegation
+              </h3>
+            </div>
+            <Link
+              href="/dashboard/cards"
+              className="text-xs font-mono text-[#5465FF] hover:underline flex items-center gap-1"
+            >
+              <span>Manage Delegation</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs font-mono">
+              <span className="text-[#AAAAAA]">
+                Used: ${spentToday.toFixed(2)} USDC
+              </span>
+              <span className="text-[#DFE0E2] font-bold">
+                Cap: ${dailyLimitUsdc.toFixed(2)} USDC / period
+              </span>
+            </div>
+            <div className="w-full h-2 bg-[#0E1D24] rounded-full overflow-hidden border border-[#1A2E38]">
+              <div
+                className={`h-full transition-all duration-500 rounded-full ${
+                  percentSpent > 85 ? 'bg-rose-500' : 'bg-[#5465FF]'
+                }`}
+                style={{ width: `${Math.min(100, percentSpent)}%` }}
+              />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Recent Settled Retail Payments */}
+      <Card className="border-[#1A2E38] space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[#1A2E38]">
+          <h3 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
+            Recent Contactless Payments
+          </h3>
+          <Link
+            href="/dashboard/transactions"
+            className="text-xs font-mono text-[#AAAAAA] hover:text-[#DFE0E2] flex items-center gap-1"
+          >
+            <span>View All</span>
+            <ArrowUpRight className="w-3 h-3" />
+          </Link>
+        </div>
+
+        {recentPayments.length === 0 ? (
+          <div className="py-8 text-center space-y-2">
+            <Clock className="w-6 h-6 text-[#444444] mx-auto" />
+            <p className="text-xs font-mono text-[#888888]">
+              No transactions recorded yet. Tap your linked NFC card at any participating PaidX terminal.
             </p>
           </div>
-          <div className="text-right">
-            <span className="text-sm font-mono font-bold text-[#DFE0E2]">
-              ${spentTodayUsdc.toFixed(2)} / ${dailyLimitUsdc.toFixed(2)} USDC
-            </span>
-            <span className="text-xs font-mono text-[#5465FF] ml-2">({percentSpent}%)</span>
-          </div>
-        </div>
-
-        {/* Progress Bar Container */}
-        <div className="w-full bg-[#071013] h-3 rounded-full overflow-hidden p-0.5 border border-[#1A2E38]">
-          <div
-            className="h-full bg-gradient-to-r from-[#5465FF] to-emerald-400 rounded-full transition-all duration-500"
-            style={{ width: `${percentSpent}%` }}
-          />
-        </div>
-      </Card>
-
-      {/* Interactive Card Section & Quick Tap */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Visual Physical Card */}
-        <div className="lg:col-span-1">
-          <div className="h-56 rounded-2xl p-6 bg-gradient-to-tr from-[#050D11] via-[#0E1D24] to-[#122630] border border-[#1A2E38] shadow-2xl relative flex flex-col justify-between overflow-hidden">
-            {/* Hologram / Shine effect */}
-            <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#5465FF]/20 rounded-full blur-2xl" />
-
-            <div className="flex items-center justify-between z-10">
-              <span className="font-mono font-bold text-sm tracking-tight text-[#DFE0E2]">
-                Paid<span className="text-[#5465FF]">X</span> Card
-              </span>
-              <div className="flex items-center gap-1.5">
-                <Radio className="w-4 h-4 text-[#5465FF] animate-pulse" />
-                <span className="text-[10px] font-mono text-emerald-400">ACTIVE</span>
-              </div>
-            </div>
-
-            {/* Chip */}
-            <div className="w-10 h-7 rounded bg-gradient-to-br from-amber-200 to-amber-500 p-0.5 opacity-90 shadow-sm z-10">
-              <div className="w-full h-full border border-amber-800/40 rounded flex flex-col justify-between p-0.5">
-                <div className="h-[1px] bg-amber-800/40" />
-                <div className="h-[1px] bg-amber-800/40" />
-              </div>
-            </div>
-
-            <div className="z-10 space-y-1">
-              <div className="text-[11px] font-mono text-[#AAAAAA] tracking-widest">
-                UID: 4305 •••• •••• 0129
-              </div>
-              <div className="flex items-center justify-between text-[10px] font-mono text-[#888888]">
-                <span>{session.fullName.toUpperCase()}</span>
-                <span>BASE (8453)</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex justify-between gap-2">
-            <Link href="/dashboard/cards" className="flex-1">
-              <Button variant="outline" size="sm" className="w-full text-xs font-mono">
-                Card Settings
-              </Button>
-            </Link>
-            <Link href="/merchant/terminal" className="flex-1">
-              <Button variant="secondary" size="sm" className="w-full text-xs font-mono">
-                Test in Terminal
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        {/* Recent Transactions Feed */}
-        <div className="lg:col-span-2">
-          <Card className="p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-[#1A2E38]">
-              <div>
-                <h3 className="text-sm font-mono font-bold text-[#DFE0E2]">Recent Activity</h3>
-                <p className="text-[11px] font-mono text-[#AAAAAA]">
-                  Payments verified on Base & settled in ledger
-                </p>
-              </div>
-              <Link href="/dashboard/transactions">
-                <Button variant="ghost" size="sm" className="text-xs font-mono">
-                  View All
-                  <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
-                </Button>
-              </Link>
-            </div>
-
-            <div className="divide-y divide-[#1A2E38] mt-2">
-              {recentPayments.map((payment) => (
-                <div key={payment.id} className="py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-center text-emerald-400">
-                      <CheckCircle2 className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-mono font-bold text-[#DFE0E2]">
-                        {payment.merchantName}
-                      </div>
-                      <div className="text-[11px] font-mono text-[#888888]">
-                        {payment.timestamp}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="text-xs font-mono font-bold text-[#DFE0E2]">
-                      {payment.amount}
-                    </div>
+        ) : (
+          <div className="divide-y divide-[#1A2E38]">
+            {recentPayments.map((p) => (
+              <div
+                key={p.id}
+                className="py-3 flex items-center justify-between text-xs font-mono"
+              >
+                <div>
+                  <p className="font-bold text-[#DFE0E2]">
+                    ${formatUsdc(p.amount)} USDC
+                  </p>
+                  <p className="text-[11px] text-[#888888]">
+                    {new Date(p.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge variant={p.status === 'confirmed' ? 'success' : p.status === 'failed' ? 'danger' : 'info'}>
+                    {p.status.toUpperCase()}
+                  </Badge>
+                  {p.tx_hash && (
                     <a
-                      href={getBaseScanTxUrl(payment.txHash)}
+                      href={getExplorerTxUrl(p.tx_hash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[10px] font-mono text-[#5465FF] hover:underline inline-flex items-center gap-0.5"
+                      className="text-[#5465FF] hover:underline inline-flex items-center gap-1 text-[11px]"
                     >
-                      BaseScan <ExternalLink className="w-2.5 h-2.5" />
+                      <span>Receipt</span>
+                      <ExternalLink className="w-3 h-3" />
                     </a>
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
-      {/* Deposit Modal */}
+      {/* Deposit USDC Modal */}
       <Modal
         isOpen={showDepositModal}
         onClose={() => setShowDepositModal(false)}
-        title="Deposit Funds to Smart Account"
+        title="Deposit USDC on Ethereum Sepolia"
       >
-        <div className="space-y-5 text-center">
+        <div className="space-y-4 text-center">
           <p className="text-xs font-mono text-[#AAAAAA]">
-            Send Base USDC or Base ETH directly to your non-custodial Smart Account address:
+            Send Sepolia USDC to your settlement address:
           </p>
 
-          <QrCodeDisplay value={session.smartAccountAddress} size={180} />
-
-          <div className="p-3 rounded-lg bg-[#071013] border border-[#1A2E38] text-left">
-            <span className="text-[10px] font-mono text-[#888888] block">Your Smart Account:</span>
-            <span className="text-xs font-mono text-[#5465FF] break-all select-all">
-              {session.smartAccountAddress}
-            </span>
+          <div className="flex justify-center p-4 bg-white rounded-xl w-fit mx-auto">
+            <QrCodeDisplay value={walletAddr} size={180} />
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-emerald-400">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Network: Base (Chain ID 8453)</span>
+          <div className="p-3 bg-[#0B161B] rounded-lg border border-[#1A2E38] font-mono text-xs text-[#5465FF] break-all select-all">
+            {walletAddr}
           </div>
 
-          <Button
-            variant="outline"
-            size="md"
-            className="w-full"
-            onClick={() => setShowDepositModal(false)}
-          >
-            Done
-          </Button>
+          <p className="text-[11px] font-mono text-[#666666]">
+            Official Sepolia Circle USDC Contract: {PAYMENT_TOKEN_ADDRESS}
+          </p>
         </div>
       </Modal>
     </div>
