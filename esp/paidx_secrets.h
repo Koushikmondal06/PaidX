@@ -24,7 +24,7 @@
 #define PAIDX_MERCHANT_ID "#001"
 
 // Merchant receiving address base (0x + 40 hex); must equal merchants.receiving_address
-#define PAIDX_MERCHANT_ADDRESS "0xC8C1b0BE0b1DE52c0341129456964fa95100bB40"
+#define PAIDX_MERCHANT_ADDRESS "0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6"
 
 // Expected Chain ID: Ethereum Sepolia Testnet (11155111)
 #define PAIDX_EXPECTED_CHAIN_ID 11155111UL
