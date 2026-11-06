@@ -16,9 +16,9 @@ import {
   tokenValidationCache,
 } from '../../mcp-server/src/server.ts';
 import { MCP_TOOL_DEFINITIONS } from '../../mcp-server/src/tools.ts';
-import healthHandler from '../../mcp-server/api/health.ts';
-import mcpHandler from '../../mcp-server/api/mcp.ts';
-import indexHandler from '../../mcp-server/api/index.ts';
+import healthHandler from '../../mcp-server/api/health.js';
+import mcpHandler from '../../mcp-server/api/mcp.js';
+import indexHandler from '../../mcp-server/api/index.js';
 
 // Helper to create mock Node.js HTTP request/response objects
 function createMockHttp(options: {

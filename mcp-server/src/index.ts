@@ -67,6 +67,9 @@ process.on('SIGINT', async () => {
 });
 
 const isMainModule = (): boolean => {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return false;
+  }
   if (process.env.NODE_ENV === 'test' || process.argv.some((arg) => arg.includes('test'))) {
     return false;
   }
@@ -92,3 +95,6 @@ if (isMainModule()) {
 
 export { server };
 export default handleVercelRequest;
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Object.assign(handleVercelRequest, module.exports);
+}
