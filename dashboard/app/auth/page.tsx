@@ -153,7 +153,11 @@ export default function AuthPage() {
     } catch (err: unknown) {
       console.error('[Auth Error]:', err);
       const msg = err instanceof Error ? err.message : 'Authentication failed. Please verify your credentials.';
-      setError(msg);
+      if (msg.toLowerCase().includes('rate limit')) {
+        setError('Email rate limit exceeded (Supabase default is 3-4 emails/hour). If you already created this account, switch to "Sign In" above. To bypass email confirmation during testnet development, disable "Confirm email" in Supabase Dashboard > Authentication > Providers > Email.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -188,11 +192,10 @@ export default function AuthPage() {
                 setError(null);
                 setInfoMessage(null);
               }}
-              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${
-                mode === 'register'
+              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${mode === 'register'
                   ? 'bg-[#5465FF] text-white shadow-sm'
                   : 'text-[#888888] hover:text-[#DFE0E2]'
-              }`}
+                }`}
             >
               Create Account
             </button>
@@ -203,11 +206,10 @@ export default function AuthPage() {
                 setError(null);
                 setInfoMessage(null);
               }}
-              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${
-                mode === 'login'
+              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${mode === 'login'
                   ? 'bg-[#5465FF] text-white shadow-sm'
                   : 'text-[#888888] hover:text-[#DFE0E2]'
-              }`}
+                }`}
             >
               Sign In
             </button>
@@ -237,11 +239,10 @@ export default function AuthPage() {
                 setChannel('email');
                 setError(null);
               }}
-              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${
-                channel === 'email'
+              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${channel === 'email'
                   ? 'bg-[#1A2E38] text-[#5465FF] font-semibold'
                   : 'text-[#666666] hover:text-[#AAAAAA]'
-              }`}
+                }`}
             >
               Email Address
             </button>
@@ -251,11 +252,10 @@ export default function AuthPage() {
                 setChannel('phone');
                 setError(null);
               }}
-              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${
-                channel === 'phone'
+              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${channel === 'phone'
                   ? 'bg-[#1A2E38] text-[#5465FF] font-semibold'
                   : 'text-[#666666] hover:text-[#AAAAAA]'
-              }`}
+                }`}
             >
               Phone Number
             </button>

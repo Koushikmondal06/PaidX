@@ -180,7 +180,10 @@ export default function AdminDashboardPage() {
     setActionFeedback(null);
 
     try {
-      const walletClient = getBrowserWalletClient();
+      if (!connectedAddress) {
+        throw new Error('MetaMask admin wallet is not connected.');
+      }
+      const walletClient = getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getMerchantRegistryAddress() as Address;
 
@@ -190,6 +193,7 @@ export default function AdminDashboardPage() {
 
       // Send transaction in MetaMask
       const hash = await walletClient.writeContract({
+        account: connectedAddress,
         address: registryAddress,
         abi: MERCHANT_REGISTRY_ABI,
         functionName: 'registerMerchant',
@@ -243,13 +247,17 @@ export default function AdminDashboardPage() {
     setActionFeedback(null);
 
     try {
-      const walletClient = getBrowserWalletClient();
+      if (!connectedAddress) {
+        throw new Error('MetaMask admin wallet is not connected.');
+      }
+      const walletClient = getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getMerchantRegistryAddress() as Address;
 
       const merchantIdBytes32 = keccak256(stringToHex(merchant.id));
 
       const hash = await walletClient.writeContract({
+        account: connectedAddress,
         address: registryAddress,
         abi: MERCHANT_REGISTRY_ABI,
         functionName: 'setMerchantActive',
@@ -345,7 +353,7 @@ export default function AdminDashboardPage() {
             <div>
               <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
                 Protocol Administration
-                <Badge variant="outline" className="border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-xs">
+                <Badge variant="info" className="border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-xs">
                   MerchantRegistry Owner
                 </Badge>
               </h1>
@@ -436,10 +444,10 @@ export default function AdminDashboardPage() {
                         <Badge
                           variant={
                             m.status === 'active'
-                              ? 'success'
+                              ? 'active'
                               : m.status === 'pending'
                               ? 'warning'
-                              : 'danger'
+                              : 'revoked'
                           }
                           className="capitalize text-[11px]"
                         >

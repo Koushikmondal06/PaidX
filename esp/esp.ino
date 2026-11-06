@@ -72,7 +72,7 @@
 #endif
 
 #ifndef PAIDX_MERCHANT_ADDRESS
-  #define PAIDX_MERCHANT_ADDRESS "0xC8C1b0BE0b1DE52c0341129456964fa95100bB40"
+  #define PAIDX_MERCHANT_ADDRESS "0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6"
 #endif
 
 // ---------------------------------------------------------------------------
