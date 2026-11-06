@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { setTestHcsMock, publishHcsPaymentEvent } from '../../dashboard/lib/hedera/hcs.ts';
+import { setTestMirrorMock, getMirrorTopicMessageBySequence } from '../../dashboard/lib/hedera/mirrorNode.ts';
 import type { HcsAuditEvent } from '../../dashboard/lib/hedera/types.ts';
 
-test('Phase 7 / Test Case 14: Hedera Consensus Service (HCS) Audit Event Publication & Retries', async (t) => {
+test('Phase 7 / Test Case 14: Hedera Consensus Service (HCS) Audit Event Publication, Verification & Retries', async (t) => {
   const sampleEvent: HcsAuditEvent = {
     event: 'X402_WALLET_PAYMENT_SETTLED',
     agentId: 'agent-uuid-001',
@@ -19,12 +20,12 @@ test('Phase 7 / Test Case 14: Hedera Consensus Service (HCS) Audit Event Publica
 
   t.afterEach(() => {
     setTestHcsMock(null);
+    setTestMirrorMock(null);
   });
 
   await t.test('Test Case 14: publishes immutable audit event with all required fields and captures sequence number', async () => {
     setTestHcsMock({
       publish: async (paymentId, event) => {
-        // Assert all required fields are present
         assert.strictEqual(event.event, 'X402_WALLET_PAYMENT_SETTLED');
         assert.strictEqual(event.payer, '0.0.123456');
         assert.strictEqual(event.recipient, '0.0.654321');
@@ -67,6 +68,59 @@ test('Phase 7 / Test Case 14: Hedera Consensus Service (HCS) Audit Event Publica
 
     assert.strictEqual(result.success, false);
     assert.match(result.error || '', /timed out/i);
-    // Crucial check: does not throw, allows caller to preserve payment and schedule retry
+  });
+
+  await t.test('HCS Verification: verifies actual message fetched from Mirror Node', async () => {
+    const topicId = '0.0.777777';
+    const seqNum = 42;
+    const paymentId = 'pay-001';
+    const txId = '0.0.123456@1700000000.000000001';
+
+    const eventPayload = {
+      event: 'X402_WALLET_PAYMENT_SETTLED',
+      paymentId,
+      transactionId: txId,
+      agentId: 'agent-uuid-001',
+      payer: '0.0.123456',
+      recipient: '0.0.654321',
+      amountAtomic: '5000000',
+    };
+
+    const base64Message = Buffer.from(JSON.stringify(eventPayload)).toString('base64');
+
+    setTestMirrorMock({
+      getTopicMessageBySequence: async (tId, seq) => {
+        if (tId === topicId && seq === seqNum) {
+          return {
+            consensus_timestamp: '1700000005.123456789',
+            topic_id: topicId,
+            message: base64Message,
+            running_hash: 'hash123',
+            sequence_number: seqNum,
+          };
+        }
+        return null;
+      },
+    });
+
+    const message = await getMirrorTopicMessageBySequence(topicId, seqNum);
+    assert.ok(message);
+    assert.strictEqual(message.topic_id, topicId);
+    assert.strictEqual(message.sequence_number, seqNum);
+
+    const decoded = JSON.parse(Buffer.from(message.message, 'base64').toString('utf8'));
+    assert.strictEqual(decoded.paymentId, paymentId);
+    assert.strictEqual(decoded.transactionId, txId);
+    assert.strictEqual(decoded.recipient, '0.0.654321');
+    assert.strictEqual(decoded.amountAtomic, '5000000');
+  });
+
+  await t.test('HCS Verification: rejects verification when message does not exist on Mirror Node', async () => {
+    setTestMirrorMock({
+      getTopicMessageBySequence: async () => null,
+    });
+
+    const message = await getMirrorTopicMessageBySequence('0.0.777777', 999);
+    assert.strictEqual(message, null);
   });
 });

@@ -6,7 +6,12 @@ import {
   validateDecimalString,
   isValidHederaTokenId,
 } from '../hedera/decimal';
-import { getMirrorTransaction, getMirrorTopicMessages, getHashScanTxUrl } from '../hedera/mirrorNode';
+import {
+  getMirrorTransaction,
+  getMirrorTopicMessages,
+  getMirrorTopicMessageBySequence,
+  getHashScanTxUrl,
+} from '../hedera/mirrorNode';
 import { createRecipientPaymentRequirements } from '../hedera/x402/requirements';
 import { orchestrateAgentPayment } from '../agent/orchestrator';
 import { SUPPORTED_HEDERA_ASSETS } from '../hedera/types';
@@ -510,7 +515,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       const tx = await getMirrorTransaction(args.transactionId);
       const isSettled = tx && tx.result === 'SUCCESS';
 
-      // Verify associated HCS message in database / topic
+      // Query associated payment record from database
       const supabase = createServerSupabaseClient();
       const { data: paymentRecord } = await supabase
         .from('agent_payments')
@@ -519,6 +524,45 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         .eq('agent_id', ctx.agentId)
         .maybeSingle();
 
+      let hcsAuditVerified = false;
+      let hcsVerifiedEvent: any = null;
+
+      // Independent HCS verification: fetch actual message from Hedera Mirror Node
+      if (paymentRecord?.hcs_topic_id && paymentRecord?.hcs_sequence_number) {
+        const topicId = paymentRecord.hcs_topic_id;
+        const seqNum = Number(paymentRecord.hcs_sequence_number);
+        const mirrorMsg = await getMirrorTopicMessageBySequence(topicId, seqNum);
+
+        if (mirrorMsg && mirrorMsg.message) {
+          try {
+            const decodedJson = Buffer.from(mirrorMsg.message, 'base64').toString('utf8');
+            const parsedEvent = JSON.parse(decodedJson);
+            hcsVerifiedEvent = parsedEvent;
+
+            // Verify topic ID, sequence number, payment ID, transaction ID, and event payload
+            const matchesTopic = mirrorMsg.topic_id === topicId;
+            const matchesSeq = Number(mirrorMsg.sequence_number) === seqNum;
+            const matchesPaymentId = parsedEvent.paymentId === paymentRecord.id;
+            const matchesTxId = parsedEvent.transactionId === args.transactionId;
+            const matchesRecipient = parsedEvent.recipient === paymentRecord.recipient;
+            const matchesAmount = parsedEvent.amountAtomic === paymentRecord.amount_atomic;
+
+            if (
+              matchesTopic &&
+              matchesSeq &&
+              matchesPaymentId &&
+              matchesTxId &&
+              matchesRecipient &&
+              matchesAmount
+            ) {
+              hcsAuditVerified = true;
+            }
+          } catch {
+            hcsAuditVerified = false;
+          }
+        }
+      }
+
       return {
         transactionId: args.transactionId,
         isVerifiedOnHedera: !!isSettled,
@@ -526,9 +570,10 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         hashScanUrl: getHashScanTxUrl(args.transactionId),
         chargedFeeTinybars: tx?.charged_tx_fee || 0,
         result: tx?.result || 'PENDING_OR_NOT_FOUND',
-        hcsAuditVerified: Boolean(paymentRecord?.hcs_sequence_number),
+        hcsAuditVerified,
         hcsTopicId: paymentRecord?.hcs_topic_id || null,
         hcsSequenceNumber: paymentRecord?.hcs_sequence_number || null,
+        hcsEvent: hcsAuditVerified ? hcsVerifiedEvent : null,
       };
     },
   },
