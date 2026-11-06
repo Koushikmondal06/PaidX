@@ -1,6 +1,7 @@
 import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { getNeonDatabaseClient } from '@/lib/db/neonAdapter';
 
 // Hard runtime guard against bundling in client context
 if (typeof window !== 'undefined') {
@@ -14,18 +15,23 @@ export function setTestSupabaseClient(mock: any) {
 }
 
 /**
- * Creates an authoritative server-only Supabase client using the new secret key ('sb_secret_...').
+ * Creates an authoritative server-only database client.
  * 
- * HARD SECURITY RULES ENFORCED:
- * 1. Marked 'server-only' to prevent inclusion in client bundles.
- * 2. Secret key must start with 'sb_secret_'.
- * 3. The secret key is NOT a JWT: it is sent strictly via the 'apikey' header and NEVER as 'Authorization: Bearer'.
- * 4. Bypasses RLS for authoritative server-side ledger and state management.
+ * When DATABASE_URL is configured (via Neon Postgres), queries run directly
+ * against Neon Postgres using '@neondatabase/serverless'.
+ * 
+ * If testSupabaseClient is active (in unit tests), the mock is returned.
  */
 export function createServerSupabaseClient() {
   if (testSupabaseClient) {
     return testSupabaseClient;
   }
+
+  // Priority: Neon Postgres
+  if (process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED) {
+    return getNeonDatabaseClient();
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
   const secretKey = process.env.SUPABASE_SECRET_KEY || 'sb_secret_placeholder_for_build';
 
