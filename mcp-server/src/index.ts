@@ -105,17 +105,45 @@ function createMcpSdkServer(bearerToken?: string): Server {
 }
 
 /**
- * HTTP Server handling Streamable HTTP and SSE transports
+ * Validates request Origin against configured allowed origins.
+ * Strictly prevents wildcard CORS.
  */
-const server = http.createServer(async (req, res) => {
-  // CORS & Security Headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function applyCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  const origin = req.headers.origin;
+  const rawAllowed = process.env.MCP_ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000';
+  const allowedOrigins = rawAllowed.split(',').map((o) => o.trim().toLowerCase());
+
+  if (origin) {
+    const cleanOrigin = origin.trim().toLowerCase();
+    const isAllowed =
+      allowedOrigins.includes(cleanOrigin) ||
+      cleanOrigin.startsWith('http://localhost:') ||
+      cleanOrigin.startsWith('http://127.0.0.1:') ||
+      cleanOrigin.startsWith('https://localhost:');
+
+    if (isAllowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+  }
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * HTTP Server handling Streamable HTTP and SSE transports
+ */
+const server = http.createServer(async (req, res) => {
+  // CORS & Security Headers
+  if (applyCorsHeaders(req, res)) {
     return;
   }
 
@@ -176,10 +204,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && (pathname === '/mcp' || pathname === '/api/mcp' || pathname === '/')) {
     let bodyStr = '';
     let bytesReceived = 0;
+    let isTooLarge = false;
 
     req.on('data', (chunk) => {
       bytesReceived += chunk.length;
       if (bytesReceived > MAX_REQUEST_SIZE_BYTES) {
+        isTooLarge = true;
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Payload Too Large: Maximum allowed size is 2MB.' }));
         req.destroy();
@@ -189,6 +219,8 @@ const server = http.createServer(async (req, res) => {
     });
 
     req.on('end', async () => {
+      if (isTooLarge) return;
+
       try {
         const authHeader = (req.headers['authorization'] as string) || '';
         const body = JSON.parse(bodyStr || '{}');
@@ -333,12 +365,17 @@ process.on('SIGINT', () => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`  PaidX Dedicated MCP Server running on port ${PORT}`);
-  console.log(`  Transport: Streamable HTTP & SSE`);
-  console.log(`  Tools: ${MCP_TOOL_DEFINITIONS.length} registered`);
-  console.log(`  URL: http://localhost:${PORT}/mcp`);
-  console.log(`  Connected Backend Orchestrator: ${PAIDX_BACKEND_URL}`);
-  console.log(`=======================================================`);
-});
+// Start listening if executed directly
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`  PaidX Dedicated MCP Server running on port ${PORT}`);
+    console.log(`  Transport: Streamable HTTP & SSE`);
+    console.log(`  Tools: ${MCP_TOOL_DEFINITIONS.length} registered`);
+    console.log(`  URL: http://localhost:${PORT}/mcp`);
+    console.log(`  Connected Backend Orchestrator: ${PAIDX_BACKEND_URL}`);
+    console.log(`=======================================================`);
+  });
+}
+
+export { server };

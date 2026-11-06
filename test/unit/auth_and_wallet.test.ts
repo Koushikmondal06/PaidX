@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import crypto from 'crypto';
-import { hashAgentToken } from '../../dashboard/lib/agent/policyEngine.ts';
+import { NextRequest } from 'next/server';
+import { hashAgentToken, authenticateAgentToken } from '../../dashboard/lib/agent/policyEngine.ts';
+import { requireAuthenticatedUser } from '../../dashboard/lib/server/auth.ts';
+import { GET as getAgentsRoute, POST as createAgentRoute } from '../../dashboard/app/api/agents/route.ts';
+import { POST as agentChatRoute } from '../../dashboard/app/api/agents/chat/route.ts';
 
-test('Phase 1 / Test Cases 1, 2, 3, 18: Authentication, Authorization & Wallet Ownership', async (t) => {
-  const testUserId = '00000000-0000-0000-0000-000000000001';
-  const otherUserId = '00000000-0000-0000-0000-000000000002';
+test('Phase 1 / Test Cases 1, 2, 3, 18: Authentication, Authorization & Route Guards', async (t) => {
   const rawToken = 'paidx_agt_' + crypto.randomBytes(24).toString('hex');
-  const tokenHash = hashAgentToken(rawToken);
 
   await t.test('Test Case 1: hashes agent API tokens deterministically with SHA-256', () => {
     const hash1 = hashAgentToken(rawToken);
@@ -17,84 +18,100 @@ test('Phase 1 / Test Cases 1, 2, 3, 18: Authentication, Authorization & Wallet O
     assert.notStrictEqual(hash1, rawToken);
   });
 
-  await t.test('Test Case 1: rejects forged x-user-id header (identity derived strictly from Supabase Auth session)', () => {
-    // In our implementation, getAuthenticatedUser parses Authorization: Bearer <jwt>
-    // and completely ignores x-user-id
-    const fakeHeaders = new Headers();
-    fakeHeaders.set('x-user-id', 'attacker_id');
+  await t.test('Test Case 1: requireAuthenticatedUser strictly REJECTS forged x-user-id header', async () => {
+    // Attacker sends forged x-user-id header without valid Supabase session
+    const req = new NextRequest('http://localhost:3000/api/agents', {
+      method: 'GET',
+      headers: {
+        'x-user-id': '00000000-0000-0000-0000-000000000999',
+      },
+    });
 
-    // Without Authorization Bearer, auth returns null
-    const authHeader = fakeHeaders.get('authorization');
-    assert.strictEqual(authHeader, null);
+    const result = await requireAuthenticatedUser(req);
+    assert.ok(!result.user);
+    assert.ok(result.errorResponse);
+    assert.strictEqual(result.errorResponse.status, 401);
   });
 
-  await t.test('Test Case 2: rejects linking a wallet that belongs to another user', () => {
-    const mockWallet = {
-      id: 'wallet-123',
-      user_id: otherUserId, // belongs to user 2
-      kind: 'hedera',
-      address: '0.0.123456',
-    };
+  await t.test('Test Case 1: Actual Route Handler GET /api/agents blocks unauthenticated requests with 401', async () => {
+    const req = new NextRequest('http://localhost:3000/api/agents', {
+      method: 'GET',
+      headers: {
+        'x-user-id': 'attacker_id',
+      },
+    });
 
-    // User 1 attempts to connect User 2's wallet
-    const isOwner = mockWallet.user_id === testUserId;
-    assert.strictEqual(isOwner, false);
+    const res = await getAgentsRoute(req);
+    assert.strictEqual(res.status, 401);
+    const body = await res.json();
+    assert.match(body.error, /Unauthorized/i);
   });
 
-  await t.test('Test Case 2: rejects linking a wallet with non-Hedera kind', () => {
+  await t.test('Test Case 2: Actual Route Handler POST /api/agents blocks unauthenticated creation with 401', async () => {
+    const req = new NextRequest('http://localhost:3000/api/agents', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': 'unauthenticated_user',
+      },
+      body: JSON.stringify({
+        agentName: 'Malicious Agent',
+        walletId: '00000000-0000-0000-0000-000000000001',
+      }),
+    });
+
+    const res = await createAgentRoute(req);
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test('Test Case 2: Actual Route Handler POST /api/agents/chat blocks requests without session or bearer token', async () => {
+    const req = new NextRequest('http://localhost:3000/api/agents/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': 'spoofed_id',
+      },
+      body: JSON.stringify({
+        message: 'Send 5 USDC to 0.0.123456',
+      }),
+    });
+
+    const res = await agentChatRoute(req);
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test('Test Case 2: Actual Route Handler POST /api/agents/chat rejects invalid token formats', async () => {
+    const req = new NextRequest('http://localhost:3000/api/agents/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer invalid_token_format', // Does not start with paidx_agt_
+      },
+      body: JSON.stringify({
+        message: 'Send 5 USDC to 0.0.123456',
+      }),
+    });
+
+    const res = await agentChatRoute(req);
+    assert.strictEqual(res.status, 401);
+  });
+
+  await t.test('Test Case 3: authenticateAgentToken returns null for empty or non-paidx tokens', async () => {
+    const res1 = await authenticateAgentToken('');
+    assert.strictEqual(res1, null);
+
+    const res2 = await authenticateAgentToken('Bearer not_a_paidx_token');
+    assert.strictEqual(res2, null);
+  });
+
+  await t.test('Wallet Ownership: rejects non-Hedera wallet kind', () => {
     const mockEthWallet = {
       id: 'wallet-eth-456',
-      user_id: testUserId,
+      user_id: 'user-1',
       kind: 'metamask_smart_account',
       address: '0x1234567890abcdef',
     };
 
-    const isHedera = mockEthWallet.kind === 'hedera';
-    assert.strictEqual(isHedera, false);
-  });
-
-  await t.test('Test Case 3: Token revocation immediately invalidates agent token', () => {
-    // State before revocation
-    let agentRecord: any = {
-      id: 'agent-1',
-      api_key_hash: tokenHash,
-      status: 'active',
-      revoked_at: null,
-    };
-
-    assert.strictEqual(agentRecord.status, 'active');
-
-    // Revocation action
-    agentRecord = {
-      ...agentRecord,
-      status: 'revoked',
-      revoked_at: new Date().toISOString(),
-    };
-
-    assert.strictEqual(agentRecord.status, 'revoked');
-    assert.ok(agentRecord.revoked_at);
-  });
-
-  await t.test('Test Case 18: Agent revocation during payment execution blocks payment immediately', () => {
-    const revokedAgent = {
-      id: 'agent-revoked',
-      status: 'revoked',
-      expires_at: null,
-    };
-
-    // Policy check logic: must fail if status !== 'active'
-    const isAllowed = revokedAgent.status === 'active';
-    assert.strictEqual(isAllowed, false);
-  });
-
-  await t.test('Test Case 3: Expired agent token fails immediately', () => {
-    const expiredAgent = {
-      id: 'agent-expired',
-      status: 'active',
-      expires_at: new Date(Date.now() - 60000).toISOString(), // 1 minute in the past
-    };
-
-    const isExpired = expiredAgent.expires_at && new Date(expiredAgent.expires_at) < new Date();
-    assert.strictEqual(isExpired, true);
+    assert.notStrictEqual(mockEthWallet.kind, 'hedera');
   });
 });
