@@ -47,7 +47,7 @@ export async function GET() {
 
     return NextResponse.json({
       status: 'healthy',
-      provider: 'Neon Lakebase Postgres',
+      provider: connectionInfo.provider || 'PostgreSQL',
       branch: connectionInfo.branch,
       serverTime: connectionInfo.serverTime,
       latencyMs: connectionInfo.latencyMs,
