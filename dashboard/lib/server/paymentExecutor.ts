@@ -28,11 +28,13 @@ export async function executeDelegationRedemption({
   recipientAddress,
   amount,
   grantPayload,
+  payerAddress,
 }: {
   tokenAddress: string;
   recipientAddress: string;
   amount: bigint;
   grantPayload: any;
+  payerAddress?: string;
 }): Promise<PaymentExecutionResult> {
   let sessionAccount;
   try {
@@ -106,10 +108,21 @@ export async function executeDelegationRedemption({
         data: redeemCalldata,
       });
     } else {
-      // If user permission is direct relayer transfer (fallback session authorization)
+      // Direct session transfer via approved spending delegation
+      const resolvedPayer = (payerAddress || grantPayload?.payerAddress) as Address;
+      if (!resolvedPayer) {
+        throw new Error('Payer wallet address is missing from permission grant payload.');
+      }
+
+      const transferFromCalldata = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'transferFrom',
+        args: [resolvedPayer, recipientAddress as Address, amount],
+      });
+
       txHash = await walletClient.sendTransaction({
         to: tokenAddress as Address,
-        data: transferCalldata,
+        data: transferFromCalldata,
       });
     }
 

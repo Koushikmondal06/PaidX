@@ -51,41 +51,39 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const targetMerchantId = merchantIdHeader || bodyMerchantId;
-    const targetMerchantAddress =
-      body?.merchantAddress ||
-      (targetMerchantId?.startsWith('0x') ? targetMerchantId : null) ||
-      '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6';
+    // 1. Authenticate & Resolve Merchant from Database
+    const targetMerchantId = merchantIdHeader || bodyMerchantId || '#001';
 
-    // Verify merchant in DB: check by ID or by payout_address
-    let merchant: any = null;
-    if (targetMerchantId && !targetMerchantId.startsWith('0x') && targetMerchantId !== '#001') {
-      const { data } = await supabase
-        .from('merchants')
-        .select('*')
-        .eq('id', targetMerchantId)
-        .maybeSingle();
-      merchant = data;
+    let merchantQuery = supabase.from('merchants').select('*');
+    if (targetMerchantId === '#001' || targetMerchantId === '001') {
+      merchantQuery = merchantQuery.or('slug.eq.#001,slug.eq.001,payout_address.ilike.0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6');
+    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetMerchantId)) {
+      merchantQuery = merchantQuery.eq('id', targetMerchantId);
+    } else {
+      merchantQuery = merchantQuery.or(`slug.eq.${targetMerchantId},payout_address.ilike.${targetMerchantId}`);
     }
 
-    if (!merchant && targetMerchantAddress) {
-      const { data } = await supabase
-        .from('merchants')
-        .select('*')
-        .ilike('payout_address', targetMerchantAddress)
-        .maybeSingle();
-      merchant = data;
+    const { data: merchant, error: merchantError } = await merchantQuery.maybeSingle();
+
+    if (merchantError || !merchant) {
+      return NextResponse.json(
+        { error: `Merchant "${targetMerchantId}" not found in registry`, code: 'MERCHANT_NOT_FOUND' },
+        { status: 404 }
+      );
     }
 
-    // Default to active merchant profile with the target recipient address
-    if (!merchant) {
-      merchant = {
-        id: '00000000-0000-0000-0000-000000000001',
-        name: 'PaidX Sepolia Merchant',
-        payout_address: targetMerchantAddress,
-        status: 'active',
-        is_active: true,
-      };
+    if (merchant.status !== 'active') {
+      return NextResponse.json(
+        { error: `Merchant "${merchant.name}" is currently ${merchant.status}`, code: 'MERCHANT_INACTIVE' },
+        { status: 403 }
+      );
+    }
+
+    if (!merchant.payout_address || !merchant.payout_address.startsWith('0x')) {
+      return NextResponse.json(
+        { error: `Merchant "${merchant.name}" has no valid payout address configured`, code: 'INVALID_MERCHANT_PAYOUT' },
+        { status: 400 }
+      );
     }
 
     // 2. Resolve Card Hash (raw UID is never stored)
@@ -137,6 +135,14 @@ export async function POST(req: NextRequest) {
         { status: 404 }
       );
     }
+
+    const { data: userWallet } = await supabase
+      .from('wallets')
+      .select('address')
+      .eq('user_id', card.user_id)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     // Check validity timestamps
     const now = new Date();
@@ -223,6 +229,7 @@ export async function POST(req: NextRequest) {
       recipientAddress: merchant.payout_address,
       amount: requestedAmount,
       grantPayload: permission.grant_payload,
+      payerAddress: userWallet?.address || (permission.grant_payload as any)?.payerAddress,
     });
 
     if (executionResult.success) {

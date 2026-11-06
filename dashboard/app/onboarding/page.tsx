@@ -12,7 +12,7 @@ import { getRealUserSession, UserSession, UserRole } from '@/lib/auth';
 import { PAYMENT_TOKEN_ADDRESS, truncateAddress, getExplorerTxUrl } from '@/lib/base';
 import { getBrowserPublicClient, getBrowserWalletClient, CHAIN_ID } from '@/lib/chain';
 import { getUpgradeStatus, checkWalletCapabilities, triggerSmartAccountUpgrade, UpgradeStatusResult } from '@/lib/eip7702';
-import { getCardRegistryAddress, CARD_REGISTRY_ABI } from '@/lib/contracts';
+import { getCardRegistryAddress, CARD_REGISTRY_ABI, ERC20_ABI } from '@/lib/contracts';
 import { isAddress, type Address, type Hash } from 'viem';
 import {
   Wallet,
@@ -262,6 +262,25 @@ export default function OnboardingPage() {
       const totalValiditySec = parseInt(expiryDays, 10) * 86400;
       const validUntil = new Date(Date.now() + totalValiditySec * 1000).toISOString();
 
+      // Sign on-chain allowance approval for Session Relayer via MetaMask
+      const walletClient = getBrowserWalletClient(connectedAddress);
+      const publicClient = getBrowserPublicClient();
+
+      const approvalTx = await walletClient.writeContract({
+        account: connectedAddress,
+        address: PAYMENT_TOKEN_ADDRESS as Address,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [sessionAccountAddress as Address, BigInt(limitAmountUnits)],
+      });
+
+      // Wait 1 confirmation
+      await publicClient.waitForTransactionReceipt({
+        hash: approvalTx,
+        confirmations: 1,
+        timeout: 60_000,
+      });
+
       const { data: authSession } = await supabase.auth.getSession();
       const token = authSession.session?.access_token;
 
@@ -285,6 +304,7 @@ export default function OnboardingPage() {
             sessionAccountAddress,
             network: 'Sepolia',
             dailyCapUsdc: activeLimit,
+            approvalTxHash: approvalTx,
           },
         }),
       });
@@ -726,11 +746,11 @@ export default function OnboardingPage() {
               {isSavingPermission ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Saving Permission...
+                  Sign Spending Allowance in MetaMask...
                 </>
               ) : (
                 <>
-                  <span>Grant Permission & Continue</span>
+                  <span>Sign Allowance & Continue</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -738,13 +758,13 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* STEP 5: REGISTER PHYSICAL NFC CARD */}
+        {/* STEP 5: ISSUE PHYSICAL NFC CARD */}
         {role === 'payer' && step === 5 && (
           <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
             <div className="space-y-1">
               <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-indigo-400" />
-                Step 5: Register Physical NFC Card On-Chain
+                Step 5: Issue Physical NFC Card On-Chain
               </h2>
               <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
                 Enter your physical NFC card UID. Your account will execute an on-chain registration on the Sepolia CardRegistry contract.
@@ -754,7 +774,7 @@ export default function OnboardingPage() {
             {registeredCardTx ? (
               <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-2 font-mono">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <h3 className="text-sm font-bold text-white">Card Successfully Registered On-Chain!</h3>
+                <h3 className="text-sm font-bold text-white">Card Successfully Issued & Registered On-Chain!</h3>
                 <a
                   href={getExplorerTxUrl(registeredCardTx)}
                   target="_blank"

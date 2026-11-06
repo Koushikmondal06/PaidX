@@ -277,7 +277,7 @@ export default function CardsAndLimitsPage() {
           className="font-mono text-xs"
         >
           <Plus className="w-3.5 h-3.5 mr-1.5" />
-          <span>Link New NFC Card</span>
+          <span>Issue a Card</span>
         </Button>
       </div>
 
@@ -306,7 +306,7 @@ export default function CardsAndLimitsPage() {
               onClick={() => setShowClaimModal(true)}
               className="font-mono text-xs"
             >
-              Link Your First Card
+              Issue Your First Card
             </Button>
           </Card>
         ) : (
@@ -452,16 +452,16 @@ export default function CardsAndLimitsPage() {
         )}
       </div>
 
-      {/* Link Card Modal */}
+      {/* Issue Card Modal */}
       <Modal
         isOpen={showClaimModal}
         onClose={() => setShowClaimModal(false)}
-        title="Link Physical NFC Card"
+        title="Issue Physical NFC Card"
       >
         <form onSubmit={handleRegisterCard} className="space-y-4">
           <p className="text-xs font-mono text-[#AAAAAA]">
-            Enter the NFC tag UID from your physical card. The raw UID is hashed server-side with
-            CARD_UID_SALT and never stored in plain text.
+            Enter the NFC tag UID from your physical card to issue and link it to your MetaMask wallet.
+            The raw UID is hashed server-side with CARD_UID_SALT and never stored in plain text.
           </p>
 
           <Input
@@ -488,7 +488,7 @@ export default function CardsAndLimitsPage() {
               size="sm"
               isLoading={isSubmittingCard}
             >
-              Register Card
+              Issue a Card
             </Button>
           </div>
         </form>
