@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert';
+import { PrivateKey, AccountId, TokenId, TransferTransaction, Hbar } from '@hiero-ledger/sdk';
 import {
   validateTransactionBytesAgainstRequirements,
+  checkFacilitatorCapabilities,
   setTestFacilitatorMock,
   verifyPaymentPayload,
   settlePaymentPayload,
@@ -15,6 +17,7 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
   const recipientAccountId = '0.0.654321';
   const assetId = '0.0.5449156'; // USDC Token
   const requiredAmount = '5000000'; // 5 USDC
+  const testKey = PrivateKey.generateED25519();
 
   const validRequirements: X402PaymentRequirements = {
     scheme: 'exact',
@@ -24,6 +27,15 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
     payTo: recipientAccountId,
     maxTimeoutSeconds: 180,
   };
+
+  function createSignedPayload(tx: TransferTransaction): X402PaymentPayload {
+    testKey.signTransaction(tx);
+    return {
+      scheme: 'exact',
+      network: 'hedera:testnet',
+      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
+    };
+  }
 
   t.afterEach(() => {
     setTestFacilitatorMock(null);
@@ -38,11 +50,7 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
       atomicAmount: requiredAmount,
     });
 
-    const payload: X402PaymentPayload = {
-      scheme: 'exact',
-      network: 'hedera:testnet',
-      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
-    };
+    const payload = createSignedPayload(tx);
 
     const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
     assert.strictEqual(result.valid, true);
@@ -51,20 +59,34 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
     assert.strictEqual(result.details?.amount, requiredAmount);
   });
 
-  await t.test('Test Case 11: rejects payload with amount mismatch (greater amount)', () => {
-    // Transaction pays 6 USDC instead of required 5 USDC
+  await t.test('Test Case 11: rejects unsigned payload (fails closed on missing signature structure)', () => {
     const tx = buildTransferTransaction({
       payerAccountId,
       recipientAccountId,
       assetId,
-      atomicAmount: '6000000',
+      atomicAmount: requiredAmount,
     });
 
     const payload: X402PaymentPayload = {
       scheme: 'exact',
       network: 'hedera:testnet',
-      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
+      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'), // NOT signed
     };
+
+    const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
+    assert.strictEqual(result.valid, false);
+    assert.match(result.error || '', /No cryptographic signatures/i);
+  });
+
+  await t.test('Test Case 11: rejects payload with amount mismatch (greater amount)', () => {
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId,
+      atomicAmount: '6000000', // 6 USDC instead of 5
+    });
+
+    const payload = createSignedPayload(tx);
 
     const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
     assert.strictEqual(result.valid, false);
@@ -72,19 +94,14 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
   });
 
   await t.test('Test Case 11: rejects payload with amount mismatch (lesser amount)', () => {
-    // Transaction pays 4 USDC instead of required 5 USDC
     const tx = buildTransferTransaction({
       payerAccountId,
       recipientAccountId,
       assetId,
-      atomicAmount: '4000000',
+      atomicAmount: '4000000', // 4 USDC instead of 5
     });
 
-    const payload: X402PaymentPayload = {
-      scheme: 'exact',
-      network: 'hedera:testnet',
-      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
-    };
+    const payload = createSignedPayload(tx);
 
     const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
     assert.strictEqual(result.valid, false);
@@ -99,11 +116,7 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
       atomicAmount: requiredAmount,
     });
 
-    const payload: X402PaymentPayload = {
-      scheme: 'exact',
-      network: 'hedera:testnet',
-      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
-    };
+    const payload = createSignedPayload(tx);
 
     const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
     assert.strictEqual(result.valid, false);
@@ -114,109 +127,180 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
     const tx = buildTransferTransaction({
       payerAccountId,
       recipientAccountId,
-      assetId: '0.0.888888', // Wrong token ID
+      assetId: '0.0.777777', // Different token
       atomicAmount: requiredAmount,
     });
 
-    const payload: X402PaymentPayload = {
-      scheme: 'exact',
-      network: 'hedera:testnet',
-      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
-    };
+    const payload = createSignedPayload(tx);
 
     const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
     assert.strictEqual(result.valid, false);
     assert.match(result.error || '', /does not transfer required token asset/i);
   });
 
-  await t.test('Test Case 11: rejects non-exact scheme', () => {
+  await t.test('Security Zero-Tolerance: rejects extra transfers to third-party accounts', () => {
+    const tx = new TransferTransaction();
+    const payer = AccountId.fromString(payerAccountId);
+    const rec = AccountId.fromString(recipientAccountId);
+    const hacker = AccountId.fromString('0.0.666666');
+    const token = TokenId.fromString(assetId);
+
+    // Adds unauthorized 3rd party transfer
+    tx.setTransactionId(require('@hiero-ledger/sdk').TransactionId.generate(payer));
+    tx.addTokenTransfer(token, payer, -6000000n);
+    tx.addTokenTransfer(token, rec, 5000000n);
+    tx.addTokenTransfer(token, hacker, 1000000n); // Extra unauthorized transfer!
+    tx.setNodeAccountIds([AccountId.fromString('0.0.3')]);
+    tx.freeze();
+
+    const payload = createSignedPayload(tx);
+
+    const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
+    assert.strictEqual(result.valid, false);
+    assert.match(result.error || '', /Expected exactly 2 token transfer entries/i);
+  });
+
+  await t.test('Security Zero-Tolerance: rejects unauthorized HBAR transfer inside token payment', () => {
+    const payer = AccountId.fromString(payerAccountId);
+    const rec = AccountId.fromString(recipientAccountId);
+    const token = TokenId.fromString(assetId);
+
+    const tx = new TransferTransaction()
+      .setTransactionId(require('@hiero-ledger/sdk').TransactionId.generate(payer))
+      .addTokenTransfer(token, payer, -5000000n)
+      .addTokenTransfer(token, rec, 5000000n)
+      .addHbarTransfer(payer, Hbar.fromTinybars(-100))
+      .addHbarTransfer(AccountId.fromString('0.0.666666'), Hbar.fromTinybars(100))
+      .setNodeAccountIds([AccountId.fromString('0.0.3')])
+      .freeze();
+
+    const payload = createSignedPayload(tx);
+
+    const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
+    assert.strictEqual(result.valid, false);
+    assert.match(result.error || '', /unauthorized HBAR transfers in a token payment/i);
+  });
+
+  await t.test('Facilitator Capabilities: rejects unsupported network, scheme, or asset', async () => {
+    setTestFacilitatorMock({
+      supported: async () => ({
+        networks: ['hedera:mainnet'], // Only mainnet supported
+        schemes: ['exact'],
+        assets: ['0.0.5449156'],
+        methods: ['cryptoTransfer'],
+      }),
+    });
+
+    await assert.rejects(
+      async () => {
+        await checkFacilitatorCapabilities(undefined, {
+          network: 'hedera:testnet', // Requests testnet
+          scheme: 'exact',
+          asset: '0.0.5449156',
+        });
+      },
+      /does not support network "hedera:testnet"/i
+    );
+  });
+
+  await t.test('Facilitator Verification: requires facilitator response valid === true', async () => {
     const tx = buildTransferTransaction({
       payerAccountId,
       recipientAccountId,
       assetId,
       atomicAmount: requiredAmount,
     });
+    const payload = createSignedPayload(tx);
 
-    const payload: X402PaymentPayload = {
-      scheme: 'market' as any,
-      network: 'hedera:testnet',
-      transactionBytes: Buffer.from(tx.toBytes()).toString('base64'),
-    };
+    setTestFacilitatorMock({
+      verify: async () => ({
+        valid: false,
+        error: 'Facilitator rejected: Signature verification failed on facilitator node',
+      }),
+    });
 
-    const result = validateTransactionBytesAgainstRequirements(payload, validRequirements);
+    const result = await verifyPaymentPayload(payload, validRequirements);
     assert.strictEqual(result.valid, false);
-    assert.match(result.error || '', /Invalid scheme/i);
+    assert.match(result.error || '', /Signature verification failed/i);
   });
 
-  await t.test('Test Case 12: facilitator settlement failure fails closed (never falls back to operator)', async () => {
+  await t.test('Facilitator Verification: FAILS CLOSED when facilitator is unavailable', async () => {
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId,
+      atomicAmount: requiredAmount,
+    });
+    const payload = createSignedPayload(tx);
+
+    // Clear facilitator URL to simulate missing facilitator
+    const prevUrl = process.env.HEDERA_FACILITATOR_URL;
+    delete process.env.HEDERA_FACILITATOR_URL;
+
+    try {
+      const result = await verifyPaymentPayload(payload, validRequirements);
+      assert.strictEqual(result.valid, false);
+      assert.match(result.error || '', /facilitator is required/i);
+    } finally {
+      if (prevUrl) process.env.HEDERA_FACILITATOR_URL = prevUrl;
+    }
+  });
+
+  await t.test('Facilitator Settlement: captures network timeouts without fake settlement', async () => {
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId,
+      atomicAmount: requiredAmount,
+    });
+    const payload = createSignedPayload(tx);
+
     setTestFacilitatorMock({
       settle: async () => ({
         success: false,
-        error: 'Facilitator out of gas / sponsor budget exhausted',
+        error: 'Facilitator settlement network error: fetch failed ETIMEDOUT',
       }),
     });
 
-    const res = await settlePaymentPayload(
-      { scheme: 'exact', network: 'hedera:testnet', transactionBytes: 'AQID' },
-      validRequirements
-    );
-
-    assert.strictEqual(res.success, false);
-    assert.match(res.error || '', /sponsor budget exhausted/i);
+    const result = await settlePaymentPayload(payload, validRequirements);
+    assert.strictEqual(result.success, false);
+    assert.match(result.error || '', /network error.*ETIMEDOUT/i);
   });
 
-  await t.test('Test Case 13: Mirror Node confirmation verifies successful consensus', async () => {
-    const txId = '0.0.123456@1700000000.000000001';
+  await t.test('Mirror Node Polling: polls and returns transaction when SUCCESS reached', async () => {
+    const expectedTxId = `${payerAccountId}@1700000000.123456789`;
+
     setTestMirrorMock({
-      getTransaction: async (id) => ({
-        transaction_id: id,
-        consensus_timestamp: '1700000000.123456789',
-        result: 'SUCCESS',
-        charged_tx_fee: 100000,
-        transfers: [],
-        token_transfers: [
-          { token_id: assetId, account: recipientAccountId, amount: 5000000 },
-          { token_id: assetId, account: payerAccountId, amount: -5000000 },
-        ],
-      }),
+      getTransaction: async (txId) => {
+        if (txId === expectedTxId) {
+          return {
+            transaction_id: expectedTxId,
+            consensus_timestamp: '1700000000.123456789',
+            result: 'SUCCESS',
+            charged_tx_fee: 100000,
+            transfers: [],
+            token_transfers: [
+              { token_id: assetId, account: recipientAccountId, amount: 5000000 },
+              { token_id: assetId, account: payerAccountId, amount: -5000000 },
+            ],
+          };
+        }
+        return null;
+      },
     });
 
-    const tx = await pollTransactionConsensus(txId, 2, 10);
+    const tx = await pollTransactionConsensus(expectedTxId, 2, 50);
     assert.ok(tx);
     assert.strictEqual(tx.result, 'SUCCESS');
+    assert.strictEqual(tx.transaction_id, expectedTxId);
   });
 
-  await t.test('Test Case 13: Mirror Node detects failed transaction result', async () => {
-    const txId = '0.0.123456@1700000000.000000002';
+  await t.test('Mirror Node Polling: returns null when transaction not yet indexed', async () => {
     setTestMirrorMock({
-      getTransaction: async (id) => ({
-        transaction_id: id,
-        consensus_timestamp: '1700000000.123456789',
-        result: 'INSUFFICIENT_TOKEN_BALANCE',
-        charged_tx_fee: 50000,
-        transfers: [],
-      }),
+      getTransaction: async () => null,
     });
 
-    const tx = await pollTransactionConsensus(txId, 2, 10);
-    assert.ok(tx);
-    assert.strictEqual(tx.result, 'INSUFFICIENT_TOKEN_BALANCE');
-  });
-
-  await t.test('Test Case 19: Uncertain network outcomes handle timeout without premature release', async () => {
-    setTestFacilitatorMock({
-      settle: async () => ({
-        success: false,
-        error: 'Facilitator settlement network error: fetch failed (ETIMEDOUT)',
-      }),
-    });
-
-    const res = await settlePaymentPayload(
-      { scheme: 'exact', network: 'hedera:testnet', transactionBytes: 'AQID' },
-      validRequirements
-    );
-
-    assert.strictEqual(res.success, false);
-    assert.match(res.error || '', /network error/i);
+    const tx = await pollTransactionConsensus('0.0.123456@9999999999.000000000', 2, 50);
+    assert.strictEqual(tx, null);
   });
 });

@@ -71,6 +71,7 @@ let testMirrorMock: {
   getTransaction?: (txId: string) => Promise<MirrorTransaction | null>;
   getAccount?: (accountId: string) => Promise<MirrorAccount | null>;
   getTopicMessages?: (topicId: string) => Promise<MirrorTopicMessage[]>;
+  getTopicMessageBySequence?: (topicId: string, sequenceNumber: number) => Promise<MirrorTopicMessage | null>;
 } | null = null;
 
 export function setTestMirrorMock(mock: typeof testMirrorMock) {
@@ -225,6 +226,10 @@ export async function getMirrorTopicMessageBySequence(
   topicId: string,
   sequenceNumber: number
 ): Promise<MirrorTopicMessage | null> {
+  if (testMirrorMock?.getTopicMessageBySequence) {
+    return testMirrorMock.getTopicMessageBySequence(topicId, sequenceNumber);
+  }
+
   const baseUrl = getMirrorNodeBaseUrl();
   const url = `${baseUrl}/api/v1/topics/${encodeURIComponent(topicId.trim())}/messages/${sequenceNumber}`;
 

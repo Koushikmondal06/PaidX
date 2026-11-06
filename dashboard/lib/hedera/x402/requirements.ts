@@ -34,7 +34,7 @@ export function createRecipientPaymentRequirements({
     facilitatorFeePayer ||
     process.env.HEDERA_FACILITATOR_ACCOUNT ||
     process.env.HEDERA_OPERATOR_ID ||
-    '0.0.5449100';
+    undefined;
 
   const requirements: X402PaymentRequirements = {
     scheme: 'exact',
@@ -44,7 +44,7 @@ export function createRecipientPaymentRequirements({
     payTo: recipient.trim(),
     maxTimeoutSeconds: 180,
     extra: {
-      feePayer,
+      ...(feePayer ? { feePayer } : {}),
       paymentReference: paymentReference || `paidx-x402-${Date.now()}`,
     },
   };
