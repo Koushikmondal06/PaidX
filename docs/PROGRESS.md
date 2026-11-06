@@ -46,5 +46,6 @@
 - Status: DONE
 - Checkpoint: Ran Foundry test suite (15/15 tests passed across CardRegistry and MerchantRegistry), verified TypeScript compilation, and authored full end-to-end verification walkthrough.
 - Completed: docs/E2E_TEST.md, test/CardRegistry.t.sol & test/MerchantRegistry.t.sol verification.
+- Build Fix: Resolved Vercel build failure (commit ef6358e) by exporting `getBrowserWalletClient` from `dashboard/lib/chain.ts`, typing window.ethereum, providing required viem `account` parameters, correcting Badge variants, and aligning database merchant schema.
 - Blocked: None.
 - Unverified: None.
