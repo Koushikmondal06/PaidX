@@ -222,11 +222,11 @@ export const ERC20_ABI = [
 ] as const;
 
 export function getCardRegistryAddress(): string {
-  return process.env.NEXT_PUBLIC_CARD_REGISTRY_ADDRESS || '';
+  return process.env.NEXT_PUBLIC_CARD_REGISTRY_ADDRESS || '0x7cBD8DE77C16Ba79A1fe10E30913517845D68e51';
 }
 
 export function getMerchantRegistryAddress(): string {
-  return process.env.NEXT_PUBLIC_MERCHANT_REGISTRY_ADDRESS || '';
+  return process.env.NEXT_PUBLIC_MERCHANT_REGISTRY_ADDRESS || '0xb11dAE79F1B187E95CB93655A983D6e86E574145';
 }
 
 export function getPaymentTokenAddress(): string {
