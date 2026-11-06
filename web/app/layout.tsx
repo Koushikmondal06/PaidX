@@ -16,9 +16,10 @@ export const metadata: Metadata = {
     'Buy a cup of chai with crypto as easily as tapping a card. Physical NFC tap-to-pay cards, ESP32 hardware terminal, and instant USDC settlement on Base L2.',
   icons: {
     icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' },
+      { url: '/favicon.png', type: 'image/png' },
     ],
-    apple: '/logo.svg',
+    apple: '/apple-touch-icon.png',
   },
   keywords: [
     'Crypto POS',

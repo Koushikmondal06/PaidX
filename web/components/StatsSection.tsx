@@ -32,43 +32,50 @@ export function StatsSection() {
   ];
 
   return (
-    <section className="py-24 bg-[#FFFFFF] dark:bg-[#050B1B] transition-colors duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
+    <section id="stats" className="py-20 md:py-24 bg-white dark:bg-[#050B1B] transition-colors duration-300">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14 sm:space-y-16">
+        {/* Section Heading & Subtitle (Badge removed completely) */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-brand-blue bg-brand-blue/10 dark:text-brand-cyan dark:bg-brand-cyan/15">
-            <span>Built for Real-World Retail</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#090B12] dark:text-[#F5F8FF] tracking-tight">
+          <h2 className="font-archivo font-normal sm:font-medium text-3xl sm:text-4xl lg:text-[42px] text-[#111111] dark:text-[#F5F8FF] leading-[1.2] tracking-[-0.015em]">
             Engineered for physical counter checkout speeds
           </h2>
-          <p className="text-base sm:text-lg text-light-text-secondary dark:text-dark-text-secondary leading-relaxed">
+          <p className="font-archivo text-base sm:text-lg lg:text-[19px] text-[#334155] dark:text-[#A9B9D5] leading-[1.5] max-w-2xl mx-auto">
             Legacy card networks penalize merchants with 3.5% swipe tolls, 3-day delays, and
             chargeback disputes. PaidX delivers instantaneous finality directly on Base L2.
           </p>
         </div>
 
-        {/* 4 Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* 4 Feature Cards: Soft lavender-blue (#ECEEFF) cards with subtle border and 26-28px radius */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-7">
           {stats.map((stat, idx) => {
             const IconComp = stat.icon;
             return (
               <div
                 key={idx}
-                className="rounded-2xl p-7 bg-[#F7F8FC] dark:bg-dark-surface border border-light-border dark:border-white/10 hover:border-brand-blue/30 dark:hover:border-brand-cyan/40 transition-all duration-300 shadow-sm hover:shadow-md flex flex-col justify-between"
+                className="rounded-[26px] sm:rounded-[28px] p-7 sm:p-8 bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 transition-colors duration-200 h-full flex flex-col justify-between"
               >
-                <div className="space-y-4">
-                  <div className="w-10 h-10 rounded-xl bg-brand-blue/10 dark:bg-brand-cyan/15 text-brand-blue dark:text-brand-cyan flex items-center justify-center">
-                    <IconComp className="w-5 h-5" />
+                <div>
+                  {/* Icon at top-left inside small circular background */}
+                  <div className="w-12 h-12 rounded-full bg-[#DBE2FC] dark:bg-white/10 flex items-center justify-center shrink-0">
+                    <IconComp className="w-6 h-6 text-[#2045E8] dark:text-[#5B8EFF]" strokeWidth={2} />
                   </div>
-                  <div className="text-3xl sm:text-4xl font-black text-light-text-primary dark:text-[#F5F8FF] tracking-tight">
+
+                  {/* Prominent main metric (~40-44px) */}
+                  <div className="font-archivo font-medium text-3xl sm:text-4xl lg:text-[40px] text-[#111111] dark:text-[#F5F8FF] tracking-tight leading-tight mt-5 sm:mt-6">
                     {stat.value}
                   </div>
-                  <div className="text-sm font-bold text-light-text-primary dark:text-white">
+
+                  {/* Metric label below with medium font weight */}
+                  <div className="font-archivo font-medium text-base sm:text-[17px] text-[#111111] dark:text-[#F5F8FF] mt-1.5">
                     {stat.label}
                   </div>
                 </div>
-                <div className="pt-4 mt-4 border-t border-gray-200/60 dark:border-white/5 text-xs text-light-text-secondary dark:text-dark-text-muted leading-relaxed">
-                  {stat.desc}
+
+                {/* Subtle divider before description */}
+                <div className="pt-4 mt-6 border-t border-[#DFE3F8] dark:border-white/10">
+                  <p className="font-archivo text-[15px] sm:text-[16px] text-[#334155] dark:text-[#A9B9D5] leading-[1.6]">
+                    {stat.desc}
+                  </p>
                 </div>
               </div>
             );
@@ -78,3 +85,4 @@ export function StatsSection() {
     </section>
   );
 }
+

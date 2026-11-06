@@ -9,7 +9,6 @@ import { FeaturesSection } from '@/components/FeaturesSection';
 import { StatsSection } from '@/components/StatsSection';
 import { CurrencyCoverageSection } from '@/components/CurrencyCoverageSection';
 import { FastSettlementSection } from '@/components/FastSettlementSection';
-import { ResourcesSection } from '@/components/ResourcesSection';
 import { FaqSection } from '@/components/FaqSection';
 import { Footer } from '@/components/Footer';
 
@@ -41,9 +40,6 @@ export default function LandingPage() {
 
         {/* Fast Bank Settlement & Conversion */}
         <FastSettlementSection />
-
-        {/* Merchant Guides & Dual Solutions */}
-        <ResourcesSection />
 
         {/* Comprehensive FAQ Accordion */}
         <FaqSection />
