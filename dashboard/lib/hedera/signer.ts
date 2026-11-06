@@ -1,14 +1,17 @@
 import 'server-only';
-import {
-  TransferTransaction,
-  PrivateKey,
-  AccountId,
-} from '@hiero-ledger/sdk';
+import { TransferTransaction } from '@hiero-ledger/sdk';
 import { buildTransferTransaction } from './hts';
+import { getWalletSigningProvider } from './signing/registry';
+
+export interface SignPaymentResult {
+  transactionBytesBase64: string;
+  transactionId: string;
+}
 
 /**
  * Hedera Wallet Signer Service
- * Safely signs exact x402 payment transactions without exposing private keys to the LLM.
+ * Safely signs exact x402 payment transactions using the configured IWalletSigningProvider
+ * without exposing private keys to the LLM, browser, or API logs.
  */
 export async function signRecipientPayment({
   payerAccountId,
@@ -16,46 +19,36 @@ export async function signRecipientPayment({
   assetId,
   atomicAmount,
   feePayerAccountId,
-  signingKeyHexOrDer,
 }: {
   payerAccountId: string;
   recipientAccountId: string;
   assetId: string;
   atomicAmount: string | bigint;
   feePayerAccountId?: string;
-  signingKeyHexOrDer?: string;
-}): Promise<{
-  transactionBytesBase64: string;
-  transactionId: string;
-}> {
-  // Resolve key from parameter or environment fallback
-  const rawKey =
-    signingKeyHexOrDer ||
-    process.env.HEDERA_OPERATOR_KEY ||
-    process.env.SESSION_ACCOUNT_PRIVATE_KEY;
+}): Promise<SignPaymentResult> {
+  const provider = getWalletSigningProvider();
+  const cleanPayer = payerAccountId.trim();
+  const cleanRecipient = recipientAccountId.trim();
 
-  if (!rawKey) {
-    throw new Error('[Wallet Signer] Missing signing key for Hedera wallet.');
+  // 1. Verify that the provider can sign for the payer account
+  const canSign = await provider.canSign(cleanPayer);
+  if (!canSign) {
+    throw new Error(
+      `[Signing Error] No authorized signing key configured for connected wallet "${cleanPayer}". Operator fallback is strictly prohibited.`
+    );
   }
 
-  let privateKey: PrivateKey;
-  if (rawKey.startsWith('0x')) {
-    privateKey = PrivateKey.fromStringECDSA(rawKey);
-  } else {
-    privateKey = PrivateKey.fromString(rawKey);
-  }
-
-  // Construct TransferTransaction with exact parameters
+  // 2. Construct TransferTransaction with exact parameters
   const tx = buildTransferTransaction({
-    payerAccountId,
-    recipientAccountId,
+    payerAccountId: cleanPayer,
+    recipientAccountId: cleanRecipient,
     assetId,
     atomicAmount,
     feePayerAccountId,
   });
 
-  // Sign with authorized wallet private key
-  await tx.sign(privateKey);
+  // 3. Delegate signature to the provider (which enforces payer matching and Mirror Node key check)
+  await provider.signTransaction(cleanPayer, tx);
 
   const txBytes = tx.toBytes();
   const txBytesBase64 = Buffer.from(txBytes).toString('base64');
