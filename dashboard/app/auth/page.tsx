@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getRealUserSession, clearSession } from '@/lib/auth';
+import { APP_URL } from '@/lib/base';
 import { ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function AuthPage() {
@@ -67,12 +68,7 @@ export default function AuthPage() {
     try {
       if (mode === 'register') {
         if (channel === 'email') {
-          // Explicitly target the production console confirmation landing page
-          const redirectUrl =
-            process.env.NEXT_PUBLIC_AUTH_REDIRECT_URL ||
-            (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')
-              ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
-              : 'https://console.paidx.cc/auth/callback');
+          const redirectUrl = `${APP_URL}/auth/confirmed`;
 
           const { data, error: signUpError } = await supabase.auth.signUp({
             email,

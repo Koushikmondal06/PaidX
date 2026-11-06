@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -8,8 +9,11 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { getRealUserSession, UserSession } from '@/lib/auth';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
-import { truncateAddress, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
+import { truncateAddress, PAYMENT_TOKEN_ADDRESS, getExplorerTxUrl } from '@/lib/base';
 import { formatUsdc } from '@/lib/currency';
+import { getCardRegistryAddress, CARD_REGISTRY_ABI } from '@/lib/contracts';
+import { getBrowserPublicClient, getBrowserWalletClient, CHAIN_ID } from '@/lib/chain';
+import type { Address, Hash } from 'viem';
 import {
   CreditCard,
   Sliders,
@@ -99,7 +103,7 @@ export default function CardsAndLimitsPage() {
     loadData();
   }, []);
 
-  // Register real NFC card via API (raw UID hashed with secret salt on server)
+  // Register real NFC card via on-chain CardRegistry + API
   const handleRegisterCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rawNfcUid) return;
@@ -111,18 +115,71 @@ export default function CardsAndLimitsPage() {
       const { data: authSession } = await supabase.auth.getSession();
       const token = authSession.session?.access_token;
 
+      // 1. Obtain salted hash from server (raw UID never stored)
+      const prepRes = await fetch('/api/cards/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ rawUid: rawNfcUid.trim(), prepareOnly: true }),
+      });
+
+      const prepData = await prepRes.json();
+      if (!prepRes.ok || !prepData.uidHash) {
+        throw new Error(prepData.error || 'Failed to prepare card hash');
+      }
+
+      const cardHash = prepData.uidHash as `0x${string}`;
+
+      // 2. Prompt user to sign registerCard on-chain via MetaMask
+      if (typeof window === 'undefined' || !window.ethereum) {
+        throw new Error('MetaMask is required to sign on-chain card registration.');
+      }
+
+      const walletClient = getBrowserWalletClient();
+      const publicClient = getBrowserPublicClient();
+      const registryAddress = getCardRegistryAddress() as Address;
+
+      const userAddress = (session?.smartAccountAddress || session?.eoaAddress) as Address;
+      if (!userAddress) {
+        throw new Error('No wallet address linked to current account.');
+      }
+
+      const txHash = await walletClient.writeContract({
+        address: registryAddress,
+        abi: CARD_REGISTRY_ABI,
+        functionName: 'registerCard',
+        args: [cardHash, userAddress],
+      });
+
+      // 3. Wait for authoritative on-chain confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+        timeout: 60_000,
+      });
+
+      if (receipt.status !== 'success') {
+        throw new Error('Card registration transaction reverted on Sepolia.');
+      }
+
+      // 4. Save confirmed card record to database
       const res = await fetch('/api/cards/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ rawUid: rawNfcUid.trim() }),
+        body: JSON.stringify({
+          rawUid: rawNfcUid.trim(),
+          registrationTxHash: txHash,
+        }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to register card');
+        throw new Error(data.error || 'Failed to save card in database');
       }
 
       setRawNfcUid('');
@@ -332,29 +389,56 @@ export default function CardsAndLimitsPage() {
         </h2>
 
         {activePermission ? (
-          <Card className="border-[#1A2E38] space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <p className="text-xs font-mono font-bold text-[#DFE0E2]">
-                  Rolling 24-Hour Spending Cap: ${formatUsdc(activePermission.limit_per_period)} USDC
-                </p>
-                <p className="text-[11px] font-mono text-[#888888] mt-0.5">
-                  Available in current period: ${formatUsdc(activePermission.remaining_in_period)} USDC · Valid until{' '}
-                  {new Date(activePermission.valid_until).toLocaleDateString()}
-                </p>
-              </div>
+          (() => {
+            const daysRemaining = Math.max(
+              0,
+              Math.ceil((new Date(activePermission.valid_until).getTime() - Date.now()) / (86400 * 1000))
+            );
+            const isExpiringSoon = daysRemaining <= 3;
 
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => setShowRevokeModal(true)}
-                className="font-mono text-xs w-fit"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1" />
-                <span>Revoke Delegation</span>
-              </Button>
-            </div>
-          </Card>
+            return (
+              <Card className="border-[#1A2E38] space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-mono font-bold text-[#DFE0E2]">
+                      Rolling 24-Hour Spending Cap: ${formatUsdc(activePermission.limit_per_period)} USDC
+                    </p>
+                    <p className="text-[11px] font-mono text-[#888888] mt-0.5">
+                      Available in current period: ${formatUsdc(activePermission.remaining_in_period)} USDC · Expires in{' '}
+                      <span className={isExpiringSoon ? 'text-amber-400 font-bold' : 'text-slate-300'}>
+                        {daysRemaining} day{daysRemaining === 1 ? '' : 's'}
+                      </span>{' '}
+                      ({new Date(activePermission.valid_until).toLocaleDateString()})
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isExpiringSoon && (
+                      <Link href="/onboarding" className="font-mono text-xs text-amber-400 hover:underline">
+                        Renew
+                      </Link>
+                    )}
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setShowRevokeModal(true)}
+                      className="font-mono text-xs w-fit"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                      <span>Revoke Delegation</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {isExpiringSoon && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>Delegation expires in {daysRemaining} days. Please renew to keep contactless card payments active.</span>
+                  </div>
+                )}
+              </Card>
+            );
+          })()
         ) : (
           <Card className="border-[#1A2E38] py-6 text-center space-y-2">
             <p className="text-xs font-mono text-[#AAAAAA]">
