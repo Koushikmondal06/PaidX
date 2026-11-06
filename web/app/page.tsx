@@ -15,7 +15,7 @@ import { Footer } from '@/components/Footer';
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-white dark:bg-[#050B1B] text-light-text-body dark:text-dark-text-primary transition-colors duration-300">
+    <div className="landing-page min-h-screen flex flex-col bg-white dark:bg-[#050B1B] text-light-text-body dark:text-dark-text-primary transition-colors duration-300">
       {/* Navigation bar following Additional Requirement 2 */}
       <Navbar />
 

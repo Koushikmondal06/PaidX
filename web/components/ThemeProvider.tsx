@@ -18,6 +18,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryTheme = urlParams.get('theme') as Theme | null;
+      if (queryTheme === 'light' || queryTheme === 'dark') {
+        setThemeState(queryTheme);
+        applyTheme(queryTheme);
+        setMounted(true);
+        return;
+      }
+
       const storedTheme = localStorage.getItem('paidx-theme') as Theme | null;
       if (storedTheme === 'light' || storedTheme === 'dark') {
         setThemeState(storedTheme);

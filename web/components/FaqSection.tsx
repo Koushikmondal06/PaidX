@@ -13,44 +13,44 @@ export function FaqSection() {
 
   const faqs: FaqItem[] = [
     {
-      question: 'Do I need a special cryptocurrency point of sale terminal to accept crypto in store?',
+      question: 'How does PaidX NFC tap-to-pay work?',
       answer:
-        'No special hardware is required. You can immediately accept crypto using our web-based Virtual POS on any smartphone, iPad, tablet, or PC browser. For high-volume physical retail counters desiring a standalone dedicated device, PaidX provides our turnkey ESP32 countertop hardware terminal with integrated NFC tap-to-pay and high-contrast OLED QR screens.',
+        'Shoppers carry a physical PaidX contactless smart card linked to their self-custody smart account (ERC-4337 on Base). When tapped against the merchant\'s ESP32 terminal, the transaction executes in under 1.2 seconds without requiring an internet connection or unlocked phone from the customer.',
     },
     {
-      question: 'Can I offer crypto payments alongside cards and cash?',
+      question: 'Do customers need to unlock their phone for every coffee or lunch?',
       answer:
-        'Yes! PaidX is built to seamlessly sit alongside your existing card terminals (Square, Clover, Verifone, Toast) and cash registers. When a customer wants to pay with crypto, your cashier simply enters the amount or prompts the dynamic PaidX QR on the customer-facing screen.',
+        'No! PaidX utilizes Account Abstraction session keys. Cardholders pre-authorize a daily spending limit (e.g. $50/day). Micro-purchases like a cup of chai or a snack execute seamlessly with a physical card tap, exactly like tapping a Visa or Apple Pay.',
     },
     {
-      question: 'Which cryptocurrencies and networks are supported?',
+      question: 'What is the ESP32 hardware terminal?',
       answer:
-        'PaidX supports USDC, Bitcoin (BTC), Ethereum (ETH), Solana (SOL), Base ETH, Litecoin (LTC), Polygon (POL), and leading stablecoins. Customers can pay using any self-custody wallet (Coinbase Wallet, MetaMask, Rainbow, Phantom, Trust Wallet) or exchange wallet.',
+        'The PaidX Terminal is a standalone countertop device powered by an ESP32 microcontroller with a 2.8" SPI color touchscreen, integrated PN532 NFC reader, tactile controls, and Wi-Fi connectivity. It connects directly to the PaidX merchant portal and provides instantaneous audio and visual payment confirmations.',
     },
     {
-      question: 'Do I need to hold or manage crypto to use PaidX?',
+      question: 'Can merchants accept payments without buying hardware?',
       answer:
-        'No. PaidX eliminates all volatility and technical overhead. When a customer pays in crypto, our smart routing system immediately locks the exchange rate and converts the transaction to guaranteed fiat currency or USDC stablecoin.',
+        'Yes! PaidX provides a full web-based Virtual POS register that runs directly in any phone, iPad, tablet, or laptop browser. Simply type the sale amount in USD, and a dynamic EIP-681 QR code is generated instantly for the customer to scan.',
     },
     {
-      question: 'Can I get settled/fund payouts in fiat currency?',
+      question: 'How fast is settlement and what currency do merchants receive?',
       answer:
-        'Yes. PaidX directly deposits funds via standard ACH, Wire, or SEPA directly into your existing business bank account in 38+ countries in USD, EUR, GBP, CAD, and more. Alternatively, you can opt for 100% USDC stablecoin settlement or a customized percentage split.',
+        'Settlement occurs in under 1.2 seconds directly on Base Layer 2. Funds are deposited into your merchant receiving address in native USDC (guaranteed 1:1 USD equivalent). There is zero crypto price volatility and no waiting 2-3 business days for bank batches.',
     },
     {
-      question: 'What fees does PaidX charge?',
+      question: 'Are there gas fees for customers or merchants?',
       answer:
-        'PaidX charges a low, flat processing fee starting at just 0.5% – 1% per transaction—saving businesses up to 70–80% compared to traditional credit card interchange fees (which typically average 3.5% + $0.30). There are zero hidden monthly gateway fees and zero cancellation penalties.',
+        'Gas fees are sponsored by the PaidX Paymaster on Base L2, meaning shoppers pay $0 in gas tolls at checkout. Merchants enjoy near-zero overhead compared to traditional 3.5% + $0.30 credit card swipe tolls.',
     },
     {
-      question: 'Is PaidX compliant with cryptocurrency regulations?',
+      question: 'Can transactions be charged back or disputed?',
       answer:
-        'PaidX is engineered with institutional regulatory standards. We utilize real-time blockchain analytics, automated OFAC/Sanctions screening, and bank-grade KYC/AML compliance pipelines to ensure all retail payment flows remain 100% safe and legally compliant.',
+        'No. Once confirmed on Base L2, transactions achieve immutable cryptographic finality. Merchants never have to worry about fraudulent chargebacks, friendly fraud, or dispute fees.',
     },
     {
-      question: 'Who uses PaidX?',
+      question: 'How do I get started as a merchant?',
       answer:
-        'PaidX powers physical retail merchants, coffee shops, electronics stores, luxury boutiques, hospitality venues, and international tourist destinations that want to eliminate card interchange tolls, prevent chargeback fraud, and capture high-spending crypto consumers.',
+        'Visit console.paidx.cc, connect with email or wallet, set your store name and receiving address, and immediately launch the Virtual POS or order and provision an ESP32 hardware terminal.',
     },
   ];
 
@@ -63,13 +63,13 @@ export function FaqSection() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-brand-blue bg-brand-blue/10 dark:text-brand-cyan dark:bg-brand-cyan/15">
-            <span>Got Questions?</span>
+            <span>Frequently Asked Questions</span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-[#090B12] dark:text-[#F5F8FF]">
-            FAQs about accepting crypto payments in-store
+            Everything you need to know about PaidX
           </h2>
           <p className="text-base text-light-text-secondary dark:text-dark-text-secondary">
-            Everything you need to know about setting up and running PaidX at your register.
+            Common questions regarding NFC tap-to-pay, session limits, and Base L2 settlement.
           </p>
         </div>
 
