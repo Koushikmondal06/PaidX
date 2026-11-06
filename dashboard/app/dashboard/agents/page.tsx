@@ -27,6 +27,8 @@ import {
   Radio,
   FileText,
   Sparkles,
+  Wallet,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AgentItem {
@@ -64,14 +66,43 @@ interface AgentPaymentItem {
   created_at: string;
 }
 
+interface HederaWalletInfo {
+  id: string;
+  address: string;
+  network: string;
+  chainId: number;
+  verified: boolean;
+  publicKey?: string;
+  isPrimary: boolean;
+  hashScanUrl: string;
+  balance?: {
+    hbarBalance: string;
+    tokens: Array<{ token_id: string; balance: number }>;
+  } | null;
+  createdAt: string;
+}
+
 export default function AgentWalletPage() {
   const session = getStoredSession();
   const userId = session?.id || 'usr_8453_92f01';
 
-  // Connected Agents State
+  // Connected Agents & Payments State
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [payments, setPayments] = useState<AgentPaymentItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Linked Hedera Wallet State
+  const [hederaWallet, setHederaWallet] = useState<HederaWalletInfo | null>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+
+  // Link Wallet Modal State
+  const [showLinkWalletModal, setShowLinkWalletModal] = useState(false);
+  const [linkAccountId, setLinkAccountId] = useState('');
+  const [linkSigningKey, setLinkSigningKey] = useState('');
+  const [linkPublicKey, setLinkPublicKey] = useState('');
+  const [isLinkingWallet, setIsLinkingWallet] = useState(false);
+  const [walletLinkError, setWalletLinkError] = useState<string | null>(null);
+  const [walletLinkSuccess, setWalletLinkSuccess] = useState<string | null>(null);
 
   // New Agent Modal State
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -82,6 +113,7 @@ export default function AgentWalletPage() {
   const [autonomousEnabled, setAutonomousEnabled] = useState(true);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [agentConnectError, setAgentConnectError] = useState<string | null>(null);
 
   // Conversational Chat Tester State
   const [chatPrompt, setChatPrompt] = useState('Send 5 USDC to 0.0.123456');
@@ -93,7 +125,7 @@ export default function AgentWalletPage() {
     },
   ]);
 
-  // Load Agents & Payments
+  // Load Agents, Wallet & Payments
   const loadData = async () => {
     try {
       const supabase = createBrowserSupabaseClient();
@@ -105,13 +137,27 @@ export default function AgentWalletPage() {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
+      // 1. Fetch linked Hedera wallet
+      setWalletLoading(true);
+      const walletRes = await fetch('/api/wallets/hedera', { headers });
+      if (walletRes.ok) {
+        const wData = await walletRes.json();
+        if (wData.hasLinkedWallet && wData.wallet) {
+          setHederaWallet(wData.wallet);
+        } else {
+          setHederaWallet(null);
+        }
+      }
+      setWalletLoading(false);
+
+      // 2. Fetch connected agents
       const res = await fetch('/api/agents', { headers });
       if (res.ok) {
         const data = await res.json();
         setAgents(data.agents || []);
       }
 
-      // Fetch payment history scoped to user
+      // 3. Fetch payment history scoped to user
       const histRes = await fetch('/api/agents/payments', { headers });
       if (histRes.ok) {
         const histData = await histRes.json();
@@ -121,6 +167,7 @@ export default function AgentWalletPage() {
       console.warn('[Agents Page] Failed to fetch:', err);
     } finally {
       setLoading(false);
+      setWalletLoading(false);
     }
   };
 
@@ -128,9 +175,60 @@ export default function AgentWalletPage() {
     loadData();
   }, [userId]);
 
+  // Handle Register/Link Hedera Wallet
+  const handleLinkWalletSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWalletLinkError(null);
+    setWalletLinkSuccess(null);
+    setIsLinkingWallet(true);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+
+      const res = await fetch('/api/wallets/hedera', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          accountId: linkAccountId.trim(),
+          network: 'hedera:testnet',
+          ...(linkSigningKey.trim() ? { signingKey: linkSigningKey.trim() } : {}),
+          ...(linkPublicKey.trim() ? { publicKey: linkPublicKey.trim() } : {}),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to link Hedera wallet');
+      }
+
+      setWalletLinkSuccess(`Hedera account "${data.wallet.address}" successfully verified & linked!`);
+      await loadData();
+
+      setTimeout(() => {
+        setShowLinkWalletModal(false);
+        setWalletLinkSuccess(null);
+        setLinkAccountId('');
+        setLinkSigningKey('');
+        setLinkPublicKey('');
+      }, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Wallet linking failed';
+      setWalletLinkError(msg);
+    } finally {
+      setIsLinkingWallet(false);
+    }
+  };
+
   // Handle Connect Agent
   const handleConnectAgent = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAgentConnectError(null);
     setIsSubmitting(true);
     try {
       const supabase = createBrowserSupabaseClient();
@@ -145,6 +243,7 @@ export default function AgentWalletPage() {
         },
         body: JSON.stringify({
           agentName,
+          walletId: hederaWallet?.id,
           maxAmountPerTx: (parseFloat(maxPerTx) * 1000000).toString(),
           dailyBudget: (parseFloat(dailyBudget) * 1000000).toString(),
           monthlyBudget: (parseFloat(monthlyBudget) * 1000000).toString(),
@@ -154,13 +253,17 @@ export default function AgentWalletPage() {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setCreatedToken(data.token);
-        loadData();
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to authorize agent');
       }
-    } catch (err) {
-      console.error('Error connecting agent:', err);
+
+      setCreatedToken(data.token);
+      loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error connecting agent';
+      setAgentConnectError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -251,8 +354,7 @@ export default function AgentWalletPage() {
   };
 
   const activeAgents = agents.filter((a) => a.status === 'active');
-  const primaryHederaAccount =
-    agents[0]?.wallets?.address || process.env.NEXT_PUBLIC_HEDERA_OPERATOR_ID || '0.0.5449100';
+  const displayWalletAddress = hederaWallet?.address || 'No Hedera Wallet Linked';
 
   return (
     <div className="space-y-8">
@@ -266,21 +368,35 @@ export default function AgentWalletPage() {
             <Badge variant="info">16 MCP Tools</Badge>
           </div>
           <p className="text-sm text-[#AAAAAA] mt-1 font-mono">
-            Connect AI agents to your PaidX wallet for conversational payments on Hedera Testnet.
+            Connect AI agents to your PaidX Hedera wallet for conversational payments on Hedera Testnet.
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          onClick={() => {
-            setCreatedToken(null);
-            setShowConnectModal(true);
-          }}
-          className="self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4 mr-1.5" />
-          Connect AI Agent
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setWalletLinkError(null);
+              setWalletLinkSuccess(null);
+              setShowLinkWalletModal(true);
+            }}
+          >
+            <Wallet className="w-4 h-4 mr-1.5" />
+            {hederaWallet ? 'Manage Hedera Wallet' : 'Link Hedera Wallet'}
+          </Button>
+
+          <Button
+            variant="primary"
+            onClick={() => {
+              setCreatedToken(null);
+              setAgentConnectError(null);
+              setShowConnectModal(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Connect AI Agent
+          </Button>
+        </div>
       </div>
 
       {/* Overview Metric Cards */}
@@ -293,9 +409,9 @@ export default function AgentWalletPage() {
         />
         <StatCard
           title="Authorized Hedera Account"
-          value={primaryHederaAccount}
-          subtitle="Hedera Testnet (Chain ID 296)"
-          icon={<ShieldCheck className="w-4 h-4" />}
+          value={displayWalletAddress}
+          subtitle={hederaWallet ? 'Hedera Testnet (Chain ID 296)' : 'Action Required: Link Wallet'}
+          icon={hederaWallet ? <ShieldCheck className="w-4 h-4 text-emerald-400" /> : <ShieldAlert className="w-4 h-4 text-amber-400" />}
         />
         <StatCard
           title="Daily Spending Cap"
@@ -311,7 +427,94 @@ export default function AgentWalletPage() {
         />
       </div>
 
-      {/* Conversational Payment Console (PRIMARY REQUIREMENT) */}
+      {/* Connected Hedera Wallet Banner Section */}
+      {walletLoading ? (
+        <Card className="p-4 border border-[#1A2E38] bg-[#071013] text-xs text-[#AAAAAA] font-mono flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 animate-spin text-[#5465FF]" />
+          Verifying linked Hedera account on Mirror Node...
+        </Card>
+      ) : hederaWallet ? (
+        <Card className="p-5 border border-emerald-500/30 bg-[#071013] relative overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono uppercase tracking-wider text-[#AAAAAA]">Connected Hedera Wallet</span>
+                <Badge variant="active">Verified on Mirror Node</Badge>
+                <Badge variant="info">Testnet (296)</Badge>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-bold font-mono text-[#00F5D4]">{hederaWallet.address}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(hederaWallet.address);
+                    alert('Hedera Account ID copied to clipboard!');
+                  }}
+                  className="text-[#AAAAAA] hover:text-[#DFE0E2] transition-colors"
+                  title="Copy Account ID"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+                <a
+                  href={hederaWallet.hashScanUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#5465FF] hover:underline flex items-center gap-1 font-mono"
+                >
+                  View on HashScan <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              {hederaWallet.balance && (
+                <div className="text-xs font-mono text-[#AAAAAA]">
+                  On-Chain Balance: <span className="text-[#DFE0E2] font-semibold">{hederaWallet.balance.hbarBalance} HBAR</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setWalletLinkError(null);
+                  setWalletLinkSuccess(null);
+                  setShowLinkWalletModal(true);
+                }}
+              >
+                Change Wallet
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-5 border border-amber-500/40 bg-amber-500/5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-semibold text-[#DFE0E2]">No Hedera Wallet Linked</h3>
+                <p className="text-xs text-[#AAAAAA] mt-1">
+                  You must link an authorized Hedera Testnet account before creating AI agents or executing conversational x402 payments.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setWalletLinkError(null);
+                setWalletLinkSuccess(null);
+                setShowLinkWalletModal(true);
+              }}
+              className="shrink-0"
+            >
+              <Wallet className="w-4 h-4 mr-1.5" />
+              Link Hedera Account Now
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Conversational Payment Console */}
       <Card className="p-6 border border-[#5465FF]/30 bg-[#071013]">
         <div className="flex items-center justify-between pb-4 border-b border-[#1A2E38]">
           <div className="flex items-center gap-2">
@@ -428,7 +631,15 @@ export default function AgentWalletPage() {
           <div className="py-12 text-center space-y-3">
             <Bot className="w-8 h-8 text-[#5465FF]/50 mx-auto" />
             <p className="text-sm text-[#AAAAAA] font-mono">No AI agents connected yet.</p>
-            <Button variant="outline" size="sm" onClick={() => setShowConnectModal(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCreatedToken(null);
+                setAgentConnectError(null);
+                setShowConnectModal(true);
+              }}
+            >
               Connect Your First Agent
             </Button>
           </div>
@@ -461,7 +672,7 @@ export default function AgentWalletPage() {
                     <div className="flex items-center gap-3 text-xs font-mono text-[#AAAAAA]">
                       <span>Key: {agent.api_key_prefix}</span>
                       <span>•</span>
-                      <span>Wallet: {agent.wallets?.address || primaryHederaAccount}</span>
+                      <span>Wallet: {agent.wallets?.address || displayWalletAddress}</span>
                     </div>
                   </div>
 
@@ -563,6 +774,78 @@ export default function AgentWalletPage() {
         )}
       </Card>
 
+      {/* Link / Register Hedera Wallet Modal */}
+      <Modal
+        isOpen={showLinkWalletModal}
+        onClose={() => setShowLinkWalletModal(false)}
+        title={hederaWallet ? 'Manage Connected Hedera Wallet' : 'Link Hedera Testnet Wallet'}
+      >
+        <form onSubmit={handleLinkWalletSubmit} className="space-y-4">
+          <div className="p-3 bg-[#071013] border border-[#1A2E38] rounded-lg text-xs font-mono text-[#AAAAAA] space-y-1">
+            <div className="font-semibold text-[#DFE0E2] flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
+              Hedera Mirror Node On-Chain Verification
+            </div>
+            <p>
+              Enter your Hedera account ID. PaidX will verify the account on Mirror Node, check key control, and link it securely.
+            </p>
+          </div>
+
+          {walletLinkError && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs font-mono flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{walletLinkError}</span>
+            </div>
+          )}
+
+          {walletLinkSuccess && (
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-mono flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{walletLinkSuccess}</span>
+            </div>
+          )}
+
+          <Input
+            label="Hedera Account ID"
+            value={linkAccountId}
+            onChange={(e) => setLinkAccountId(e.target.value)}
+            placeholder="e.g. 0.0.123456"
+            required
+          />
+
+          <div>
+            <Input
+              label="Delegated Signing Key (Optional / Dev & Testing)"
+              type="password"
+              value={linkSigningKey}
+              onChange={(e) => setLinkSigningKey(e.target.value)}
+              placeholder="0x... or 302e... (DER/Hex private key)"
+            />
+            <p className="text-[11px] font-mono text-[#AAAAAA] mt-1">
+              Encrypted in memory only, never stored on disk or database. Enables AI agents to sign payments autonomously.
+            </p>
+          </div>
+
+          <div>
+            <Input
+              label="Public Key (Alternative if no private key)"
+              value={linkPublicKey}
+              onChange={(e) => setLinkPublicKey(e.target.value)}
+              placeholder="302a... (Hex public key)"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" type="button" onClick={() => setShowLinkWalletModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" disabled={isLinkingWallet || !linkAccountId.trim()}>
+              {isLinkingWallet ? 'Verifying on Mirror Node...' : 'Verify & Link Wallet'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Connect AI Agent Modal */}
       <Modal
         isOpen={showConnectModal}
@@ -617,6 +900,30 @@ export default function AgentWalletPage() {
           </div>
         ) : (
           <form onSubmit={handleConnectAgent} className="space-y-4">
+            {!hederaWallet && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs font-mono flex items-center justify-between">
+                <span>No Hedera wallet linked. Link a wallet first:</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setShowConnectModal(false);
+                    setShowLinkWalletModal(true);
+                  }}
+                >
+                  Link Wallet
+                </Button>
+              </div>
+            )}
+
+            {agentConnectError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs font-mono flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{agentConnectError}</span>
+              </div>
+            )}
+
             <Input
               label="Agent Name"
               value={agentName}

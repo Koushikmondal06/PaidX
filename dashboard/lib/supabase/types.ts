@@ -48,6 +48,11 @@ export type Database = {
           kind: string;
           is_primary: boolean;
           smart_account_upgraded: boolean;
+          network?: string | null;
+          public_key?: string | null;
+          verified?: boolean;
+          verification_metadata?: Record<string, any> | null;
+          evm_address?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -59,6 +64,11 @@ export type Database = {
           kind: string;
           is_primary?: boolean;
           smart_account_upgraded?: boolean;
+          network?: string | null;
+          public_key?: string | null;
+          verified?: boolean;
+          verification_metadata?: Record<string, any> | null;
+          evm_address?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -70,6 +80,11 @@ export type Database = {
           kind?: string;
           is_primary?: boolean;
           smart_account_upgraded?: boolean;
+          network?: string | null;
+          public_key?: string | null;
+          verified?: boolean;
+          verification_metadata?: Record<string, any> | null;
+          evm_address?: string | null;
           created_at?: string;
           updated_at?: string;
         };

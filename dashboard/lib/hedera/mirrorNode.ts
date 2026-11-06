@@ -70,6 +70,7 @@ export interface MirrorTopicMessage {
 let testMirrorMock: {
   getTransaction?: (txId: string) => Promise<MirrorTransaction | null>;
   getAccount?: (accountId: string) => Promise<MirrorAccount | null>;
+  getBalance?: (accountId: string) => Promise<MirrorAccountBalance | null>;
   getTopicMessages?: (topicId: string) => Promise<MirrorTopicMessage[]>;
   getTopicMessageBySequence?: (topicId: string, sequenceNumber: number) => Promise<MirrorTopicMessage | null>;
 } | null = null;
@@ -106,6 +107,10 @@ export async function getMirrorAccount(accountId: string): Promise<MirrorAccount
  * Fetch account balances and token associations from Hedera Mirror Node
  */
 export async function getMirrorAccountBalance(accountId: string): Promise<MirrorAccountBalance | null> {
+  if (testMirrorMock?.getBalance) {
+    return testMirrorMock.getBalance(accountId);
+  }
+
   const baseUrl = getMirrorNodeBaseUrl();
   const url = `${baseUrl}/api/v1/balances?account.id=${encodeURIComponent(accountId.trim())}`;
 

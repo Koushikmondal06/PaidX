@@ -7,6 +7,12 @@ if (typeof window !== 'undefined') {
   throw new Error('[Security Exception] Server Supabase client cannot be loaded on the client.');
 }
 
+let testSupabaseClient: any = null;
+
+export function setTestSupabaseClient(mock: any) {
+  testSupabaseClient = mock;
+}
+
 /**
  * Creates an authoritative server-only Supabase client using the new secret key ('sb_secret_...').
  * 
@@ -17,6 +23,9 @@ if (typeof window !== 'undefined') {
  * 4. Bypasses RLS for authoritative server-side ledger and state management.
  */
 export function createServerSupabaseClient() {
+  if (testSupabaseClient) {
+    return testSupabaseClient;
+  }
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
   const secretKey = process.env.SUPABASE_SECRET_KEY || 'sb_secret_placeholder_for_build';
 

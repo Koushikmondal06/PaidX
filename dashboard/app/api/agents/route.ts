@@ -118,17 +118,21 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      // Find user's existing Hedera wallet
-      const { data: existingHederaWallet, error: findError } = await supabase
+      // Find user's existing primary or latest Hedera wallet
+      const { data: existingHederaWallets, error: findError } = await supabase
         .from('wallets')
-        .select('id, kind')
+        .select('id, kind, address, is_primary')
         .eq('user_id', user.id)
         .eq('kind', 'hedera')
-        .maybeSingle();
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1);
 
       if (findError) {
         return NextResponse.json({ error: findError.message }, { status: 500 });
       }
+
+      const existingHederaWallet = existingHederaWallets?.[0];
 
       if (!existingHederaWallet) {
         return NextResponse.json(
