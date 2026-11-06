@@ -137,16 +137,17 @@ export default function CardsAndLimitsPage() {
         throw new Error('MetaMask is required to sign on-chain card registration.');
       }
 
-      const walletClient = getBrowserWalletClient();
-      const publicClient = getBrowserPublicClient();
-      const registryAddress = getCardRegistryAddress() as Address;
-
       const userAddress = (session?.smartAccountAddress || session?.eoaAddress) as Address;
       if (!userAddress) {
         throw new Error('No wallet address linked to current account.');
       }
 
+      const walletClient = getBrowserWalletClient(userAddress);
+      const publicClient = getBrowserPublicClient();
+      const registryAddress = getCardRegistryAddress() as Address;
+
       const txHash = await walletClient.writeContract({
+        account: userAddress,
         address: registryAddress,
         abi: CARD_REGISTRY_ABI,
         functionName: 'registerCard',

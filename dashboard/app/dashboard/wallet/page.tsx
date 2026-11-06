@@ -267,7 +267,8 @@ export default function ConsoleWalletPage() {
         }
       }
 
-      const walletClient = getBrowserWalletClient();
+      const senderAddress = connectedAddress as Address;
+      const walletClient = getBrowserWalletClient(senderAddress);
       const publicClient = getBrowserPublicClient();
       const targetToken = SUPPORTED_TOKENS[selectedCurrency];
       const parsedAmount = parseUnits(amount.trim(), targetToken.decimals);
@@ -278,6 +279,7 @@ export default function ConsoleWalletPage() {
       if (selectedCurrency === 'ETH') {
         // Native ETH transfer
         hash = await walletClient.sendTransaction({
+          account: senderAddress,
           to: recipientAddr,
           value: parsedAmount,
         });
@@ -287,6 +289,7 @@ export default function ConsoleWalletPage() {
         if (!tokenAddr) throw new Error('Payment token contract address is not configured.');
 
         hash = await walletClient.writeContract({
+          account: senderAddress,
           address: tokenAddr,
           abi: ERC20_ABI,
           functionName: 'transfer',
@@ -361,7 +364,7 @@ export default function ConsoleWalletPage() {
                 <Wallet className="w-6 h-6 text-indigo-400" />
                 Console Wallet
               </h1>
-              <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs">
+              <Badge variant="info" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs">
                 Sepolia Testnet
               </Badge>
             </div>
@@ -446,7 +449,7 @@ export default function ConsoleWalletPage() {
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">Payment Currency</span>
-              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs">
+              <Badge variant="active" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs">
                 ERC-20
               </Badge>
             </div>
@@ -478,7 +481,7 @@ export default function ConsoleWalletPage() {
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">Gas Currency</span>
-              <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
+              <Badge variant="info" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
                 Native
               </Badge>
             </div>

@@ -66,7 +66,7 @@ function ConfirmedContent() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between py-10 px-4 sm:px-6">
       <div className="flex justify-center mb-6">
-        <PaidXLogo size="md" subtitle="Ethereum Sepolia" />
+        <PaidXLogo size={36} />
       </div>
 
       <div className="max-w-md w-full mx-auto">
