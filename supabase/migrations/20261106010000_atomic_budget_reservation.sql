@@ -16,7 +16,8 @@ ALTER TABLE public.agent_payments ADD CONSTRAINT agent_payments_status_check
     'failed',
     'declined',
     'uncertain',
-    'approval_required'
+    'approval_required',
+    'approved'
   ));
 
 -- 2. Add hcs_status column to track asynchronous and retryable HCS audit publication
@@ -33,7 +34,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_payments_agent_idemp
 
 -- ------------------------------------------------------------------------------
 -- 4. Atomic Stored Procedure: reserve_agent_budget
--- Locks the agent policy row, validates limits/rollovers, and creates reservation
+-- Locks the agent policy row, validates limits/rollovers, binds parameters, and creates reservation
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.reserve_agent_budget(
   p_agent_id UUID,
@@ -61,12 +62,25 @@ DECLARE
   v_requires_approval BOOLEAN := FALSE;
   v_reservation_id UUID;
 BEGIN
-  -- 1. Check existing reservation for exact idempotency
+  -- 1. Check existing reservation for exact idempotency and parameter binding
   SELECT * INTO v_existing_reservation
   FROM public.agent_spending_reservations
   WHERE agent_id = p_agent_id AND idempotency_key = p_idempotency_key;
 
   IF FOUND THEN
+    -- Bind the idempotency key to amount, recipient, asset, and network
+    -- Strictly reject any replay with different parameters
+    IF v_existing_reservation.amount <> p_atomic_amount OR
+       v_existing_reservation.recipient <> p_recipient OR
+       upper(v_existing_reservation.asset) <> upper(p_asset_symbol) OR
+       lower(v_existing_reservation.network) <> lower(p_network) THEN
+      RETURN jsonb_build_object(
+        'allowed', FALSE,
+        'code', 'IDEMPOTENCY_CONFLICT',
+        'reason', 'Idempotency key was previously used with different payment parameters (amount, recipient, asset, or network).'
+      );
+    END IF;
+
     IF v_existing_reservation.status = 'reserved' THEN
       RETURN jsonb_build_object(
         'allowed', TRUE,
@@ -80,6 +94,13 @@ BEGIN
         'requires_human_approval', FALSE,
         'code', 'ALREADY_SETTLED',
         'reason', 'This payment intent has already settled on-chain.'
+      );
+    ELSIF v_existing_reservation.status = 'released' THEN
+      RETURN jsonb_build_object(
+        'allowed', FALSE,
+        'requires_human_approval', FALSE,
+        'code', 'ALREADY_RELEASED',
+        'reason', 'This payment intent was previously released.'
       );
     END IF;
   END IF;
@@ -114,7 +135,7 @@ BEGIN
     );
   END IF;
 
-  -- 3. Lock agent policy row strictly FOR UPDATE
+  -- 3. Lock agent policy row strictly FOR UPDATE to prevent race conditions
   SELECT * INTO v_policy
   FROM public.agent_policies
   WHERE agent_id = p_agent_id
@@ -275,13 +296,17 @@ $$;
 
 -- ------------------------------------------------------------------------------
 -- 5. Atomic Stored Procedure: commit_agent_reservation
+-- Locks and verifies the reservation during commit.
+-- Transitions ONLY from 'reserved' to 'settled'.
+-- Idempotent: Duplicate commits do NOT increase spent counters.
+-- Returns error if reservation does not exist.
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.commit_agent_reservation(
   p_agent_id UUID,
   p_reservation_id UUID,
   p_atomic_amount NUMERIC(78, 0)
 )
-RETURNS BOOLEAN
+RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
@@ -289,17 +314,49 @@ DECLARE
   v_today DATE := CURRENT_DATE;
   v_current_month DATE := date_trunc('month', CURRENT_DATE)::DATE;
   v_policy public.agent_policies%ROWTYPE;
+  v_reservation public.agent_spending_reservations%ROWTYPE;
   v_spent_today NUMERIC(78, 0);
   v_spent_this_month NUMERIC(78, 0);
 BEGIN
-  -- 1. Update reservation status to settled
+  -- 1. Lock and verify the reservation row strictly FOR UPDATE
+  SELECT * INTO v_reservation
+  FROM public.agent_spending_reservations
+  WHERE id = p_reservation_id AND agent_id = p_agent_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', FALSE,
+      'code', 'RESERVATION_NOT_FOUND',
+      'reason', 'Spending reservation does not exist for this agent.'
+    );
+  END IF;
+
+  -- 2. Make commit idempotent: If already settled, return success without incrementing counters again!
+  IF v_reservation.status = 'settled' THEN
+    RETURN jsonb_build_object(
+      'success', TRUE,
+      'idempotent', TRUE,
+      'status', 'already_settled'
+    );
+  END IF;
+
+  -- 3. Strict transition requirement: Must transition ONLY from 'reserved' to 'settled'
+  IF v_reservation.status <> 'reserved' THEN
+    RETURN jsonb_build_object(
+      'success', FALSE,
+      'code', 'INVALID_RESERVATION_STATUS',
+      'reason', 'Cannot commit reservation with status: ' || v_reservation.status
+    );
+  END IF;
+
+  -- 4. Transition reservation status to settled
   UPDATE public.agent_spending_reservations
   SET status = 'settled',
       updated_at = NOW()
-  WHERE id = p_reservation_id
-    AND agent_id = p_agent_id;
+  WHERE id = p_reservation_id;
 
-  -- 2. Lock and update policy spent amounts
+  -- 5. Lock and update policy spent amounts
   SELECT * INTO v_policy
   FROM public.agent_policies
   WHERE agent_id = p_agent_id
@@ -325,28 +382,69 @@ BEGIN
     WHERE agent_id = p_agent_id;
   END IF;
 
-  RETURN TRUE;
+  RETURN jsonb_build_object(
+    'success', TRUE,
+    'idempotent', FALSE,
+    'status', 'settled'
+  );
 END;
 $$;
 
 -- ------------------------------------------------------------------------------
 -- 6. Atomic Stored Procedure: release_agent_reservation
+-- Idempotent release: verified row lock, transitions 'reserved' to 'released'.
 -- ------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.release_agent_reservation(
   p_reservation_id UUID,
   p_reason TEXT DEFAULT 'Payment execution aborted'
 )
-RETURNS BOOLEAN
+RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_reservation public.agent_spending_reservations%ROWTYPE;
 BEGIN
+  SELECT * INTO v_reservation
+  FROM public.agent_spending_reservations
+  WHERE id = p_reservation_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', FALSE,
+      'code', 'RESERVATION_NOT_FOUND',
+      'reason', 'Reservation does not exist'
+    );
+  END IF;
+
+  -- Idempotent check
+  IF v_reservation.status = 'released' THEN
+    RETURN jsonb_build_object(
+      'success', TRUE,
+      'idempotent', TRUE,
+      'status', 'already_released'
+    );
+  END IF;
+
+  IF v_reservation.status = 'settled' THEN
+    RETURN jsonb_build_object(
+      'success', FALSE,
+      'code', 'CANNOT_RELEASE_SETTLED',
+      'reason', 'Settled reservations cannot be released'
+    );
+  END IF;
+
   UPDATE public.agent_spending_reservations
   SET status = 'released',
+      release_reason = p_reason,
       updated_at = NOW()
-  WHERE id = p_reservation_id
-    AND status = 'reserved';
+  WHERE id = p_reservation_id;
 
-  RETURN FOUND;
+  RETURN jsonb_build_object(
+    'success', TRUE,
+    'idempotent', FALSE,
+    'status', 'released'
+  );
 END;
 $$;
