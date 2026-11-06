@@ -1,4 +1,9 @@
 {
+  "name": "paidx",
+  "private": true,
+  "scripts": {
+    "test:mcp": "TSX_TSCONFIG_PATH=dashboard/tsconfig.json node --import ./mcp-server/node_modules/tsx/dist/loader.mjs -C react-server --test test/unit/mcp_vercel_serverless.test.ts test/unit/mcp_production_integration.test.ts"
+  },
   "dependencies": {
     "@neon/config": "^1.11.3",
     "@neon/env": "^1.6.15"
