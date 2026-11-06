@@ -153,7 +153,11 @@ export default function AuthPage() {
     } catch (err: unknown) {
       console.error('[Auth Error]:', err);
       const msg = err instanceof Error ? err.message : 'Authentication failed. Please verify your credentials.';
-      setError(msg);
+      if (msg.toLowerCase().includes('rate limit')) {
+        setError('Email rate limit exceeded (Supabase default is 3-4 emails/hour). If you already created this account, switch to "Sign In" above. To bypass email confirmation during testnet development, disable "Confirm email" in Supabase Dashboard > Authentication > Providers > Email.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsLoading(false);
     }
