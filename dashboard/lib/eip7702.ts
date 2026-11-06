@@ -141,16 +141,16 @@ export async function triggerSmartAccountUpgrade(
     const hexChainId = `0x${chainId.toString(16)}`;
 
     // MetaMask triggers the EIP-7702 upgrade flow when a batch of two calls is submitted
-    // Call 1 & 2: empty no-op calls to the user's own address
+    // Call 1 & 2: minimal no-op calls to user's address with valid non-empty hex data
     const calls = [
       {
         to: userAddress,
-        data: '0x',
+        data: '0x00',
         value: '0x0',
       },
       {
         to: userAddress,
-        data: '0x',
+        data: '0x00',
         value: '0x0',
       },
     ];
@@ -162,6 +162,7 @@ export async function triggerSmartAccountUpgrade(
           version: '1.0',
           chainId: hexChainId,
           from: userAddress,
+          atomicRequired: true,
           calls,
         },
       ],
