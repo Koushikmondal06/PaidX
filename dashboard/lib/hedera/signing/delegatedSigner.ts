@@ -6,13 +6,66 @@ import {
   PublicKey,
 } from '@hiero-ledger/sdk';
 import type { IWalletSigningProvider, SignerPublicKeyInfo } from './types';
-import { getMirrorAccount } from '../mirrorNode';
+import { getMirrorAccount, type MirrorAccount } from '../mirrorNode';
 
 /**
  * Normalizes account ID string (e.g. "0.0.5449100" -> "0_0_5449100") for environment variable lookups.
  */
 function accountIdToEnvSuffix(accountId: string): string {
   return accountId.trim().replace(/\./g, '_');
+}
+
+export interface MirrorKeyNode {
+  _type?: string;
+  key?: string;
+  keys?: MirrorKeyNode[];
+  threshold?: number;
+}
+
+/**
+ * Checks whether the signer's public key is authorized in the Hedera account's key structure.
+ * Supports ED25519, ECDSA_SECP256K1, KeyList, and ThresholdKey.
+ * Strictly uses exact equality (=== or PublicKey.equals), never substring includes().
+ */
+export function keyStructureMatches(
+  keyNode: MirrorKeyNode | null | undefined,
+  signerPublicKey: PublicKey
+): boolean {
+  if (!keyNode) return false;
+
+  const signerRaw = signerPublicKey.toStringRaw().toLowerCase().replace(/^0x/, '');
+  const signerDer = signerPublicKey.toStringDer().toLowerCase().replace(/^0x/, '');
+
+  // 1. If leaf key is present
+  if (keyNode.key) {
+    const candidateClean = keyNode.key.trim().toLowerCase().replace(/^0x/, '');
+
+    // Strict exact comparison against raw or DER
+    if (candidateClean === signerRaw || candidateClean === signerDer) {
+      return true;
+    }
+
+    // Attempt exact equality via PublicKey parsing if supported
+    try {
+      const candidateKey = PublicKey.fromString(keyNode.key.trim());
+      if (candidateKey.equals(signerPublicKey)) {
+        return true;
+      }
+    } catch {
+      // Ignore parse failure for custom or protobuf formats
+    }
+  }
+
+  // 2. If KeyList or ThresholdKey with child keys
+  if (Array.isArray(keyNode.keys) && keyNode.keys.length > 0) {
+    for (const childNode of keyNode.keys) {
+      if (keyStructureMatches(childNode, signerPublicKey)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -95,7 +148,7 @@ export class DelegatedWalletSigningProvider implements IWalletSigningProvider {
     const privateKey = this.resolvePrivateKeyForAccount(accountId);
     if (!privateKey) {
       throw new Error(
-        `[Signing Error] No authorized signer configured for account "${accountId}". Global operator fallback is prohibited.`
+        `[Security Exception] No authorized signer configured for account "${accountId}". Global operator fallback is prohibited.`
       );
     }
 
@@ -124,44 +177,65 @@ export class DelegatedWalletSigningProvider implements IWalletSigningProvider {
 
     // 1. Verify transaction payer matches the authorized account ID
     const txPayer = transaction.transactionId?.accountId?.toString();
-    if (txPayer && txPayer !== cleanId) {
+    if (!txPayer) {
+      throw new Error(
+        '[Security Exception] Transaction is missing a valid transactionId with payer account.'
+      );
+    }
+    if (txPayer !== cleanId) {
       throw new Error(
         `[Security Exception] Transaction payer mismatch: Transaction is set to payer "${txPayer}", but signer is authorized for "${cleanId}".`
       );
     }
 
-    // 2. Validate public key against Mirror Node on-chain key if available
+    // 2. Validate public key against Mirror Node on-chain key structure (FAIL CLOSED)
+    let mirrorAccount: MirrorAccount | null;
     try {
-      const mirrorAccount = await getMirrorAccount(cleanId);
-      if (mirrorAccount && mirrorAccount.key?.key) {
-        const onChainKey = mirrorAccount.key.key.toLowerCase().replace(/^0x/, '');
-        const signerPubKey = privateKey.publicKey.toStringRaw().toLowerCase().replace(/^0x/, '');
-
-        // If on-chain key is present, verify match
-        if (
-          onChainKey.length > 0 &&
-          !onChainKey.includes(signerPubKey) &&
-          !signerPubKey.includes(onChainKey)
-        ) {
-          throw new Error(
-            `[Security Exception] Signer public key mismatch: The signer key for "${cleanId}" does not match the on-chain key registered on Hedera Mirror Node.`
-          );
-        }
-      }
+      mirrorAccount = await getMirrorAccount(cleanId);
     } catch (err: unknown) {
-      // In offline / unit test mode or if mirror node has transient delay, log warning
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Signer public key mismatch')) {
-        throw err;
-      }
-      // Non-blocking for offline/test networks
+      throw new Error(
+        `[Security Exception] Mirror Node verification failed for account "${cleanId}": ${msg}`
+      );
     }
 
-    // 3. Sign the transaction
-    await transaction.sign(privateKey);
+    if (!mirrorAccount) {
+      throw new Error(
+        `[Security Exception] Mirror Node account lookup failed: Account "${cleanId}" could not be retrieved from Mirror Node. Signing rejected.`
+      );
+    }
+
+    if (mirrorAccount.deleted) {
+      throw new Error(
+        `[Security Exception] Account "${cleanId}" is marked as deleted on Hedera Mirror Node. Signing rejected.`
+      );
+    }
+
+    if (!mirrorAccount.key) {
+      throw new Error(
+        `[Security Exception] Account "${cleanId}" has no valid key structure registered on Hedera Mirror Node. Signing rejected.`
+      );
+    }
+
+    const keyMatches = keyStructureMatches(
+      mirrorAccount.key as MirrorKeyNode,
+      privateKey.publicKey
+    );
+
+    if (!keyMatches) {
+      throw new Error(
+        `[Security Exception] Signer public key mismatch: The signer key for "${cleanId}" is not authorized by the on-chain key structure registered on Hedera Mirror Node.`
+      );
+    }
+
+    // 3. Sign transaction directly with authorized account private key
+    privateKey.signTransaction(transaction);
+
     return transaction;
   }
 }
 
-// Global default provider instance
-export const defaultDelegatedSigner = new DelegatedWalletSigningProvider();
+// Export singleton instance
+export const delegatedSigner = new DelegatedWalletSigningProvider();
+export const defaultDelegatedSigner = delegatedSigner;
+

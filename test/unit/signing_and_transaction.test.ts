@@ -7,10 +7,11 @@ import { setTestMirrorMock } from '../../dashboard/lib/hedera/mirrorNode.ts';
 import { signRecipientPayment } from '../../dashboard/lib/hedera/signer.ts';
 import { buildTransferTransaction } from '../../dashboard/lib/hedera/hts.ts';
 
-test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Transaction Construction', async (t) => {
+test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Key Structure Verification', async (t) => {
   const payerAccountId = '0.0.123456';
   const recipientAccountId = '0.0.654321';
   const testKey = PrivateKey.generateED25519();
+  const testEcdsaKey = PrivateKey.generateECDSA();
   const testProvider = new DelegatedWalletSigningProvider();
 
   t.beforeEach(() => {
@@ -68,6 +69,7 @@ test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Transaction Con
     const pubKeyInfo = await testProvider.getPublicKey(payerAccountId);
     assert.strictEqual(pubKeyInfo.accountId, payerAccountId);
     assert.strictEqual(pubKeyInfo.publicKeyHex, testKey.publicKey.toStringRaw());
+    assert.strictEqual(pubKeyInfo.keyType, 'ED25519');
   });
 
   await t.test('Test Case 10: signs transaction successfully when payer matches signer', async () => {
@@ -99,9 +101,9 @@ test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Transaction Con
   });
 
   await t.test('Test Case 10: rejects transaction if transaction payer does not match signer account ID', async () => {
-    // Manually construct transaction with different payer
+    const otherAccount = '0.0.777777';
     const tx = buildTransferTransaction({
-      payerAccountId: '0.0.888888',
+      payerAccountId: otherAccount,
       recipientAccountId,
       assetId: '0.0.5449156',
       atomicAmount: '5000000',
@@ -109,10 +111,193 @@ test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Transaction Con
 
     await assert.rejects(
       async () => {
-        // Attempt to sign with payerAccountId (0.0.123456)
         await testProvider.signTransaction(payerAccountId, tx);
       },
       /Transaction payer mismatch/i
+    );
+  });
+
+  await t.test('Signer Security: FAILS CLOSED when Mirror Node is unavailable or network fails', async () => {
+    setTestMirrorMock({
+      getAccount: async () => {
+        throw new Error('ETIMEDOUT: Connection to Mirror Node timed out');
+      },
+    });
+
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    await assert.rejects(
+      async () => {
+        await testProvider.signTransaction(payerAccountId, tx);
+      },
+      /Mirror Node verification failed/i
+    );
+  });
+
+  await t.test('Signer Security: FAILS CLOSED when account is not found on Mirror Node', async () => {
+    setTestMirrorMock({
+      getAccount: async () => null,
+    });
+
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    await assert.rejects(
+      async () => {
+        await testProvider.signTransaction(payerAccountId, tx);
+      },
+      /could not be retrieved from Mirror Node/i
+    );
+  });
+
+  await t.test('Signer Security: rejects signing if account is marked as deleted on Mirror Node', async () => {
+    setTestMirrorMock({
+      getAccount: async (accId) => ({
+        account: accId,
+        alias: null,
+        auto_renew_period: 7776000,
+        balance: { balance: 0, timestamp: '1', tokens: [] },
+        deleted: true, // Marked as deleted!
+        evm_address: '0x0',
+        key: { _type: 'ED25519', key: testKey.publicKey.toStringRaw() },
+      }),
+    });
+
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    await assert.rejects(
+      async () => {
+        await testProvider.signTransaction(payerAccountId, tx);
+      },
+      /marked as deleted/i
+    );
+  });
+
+  await t.test('Signer Security: rejects signing on key mismatch (strictly prevents substring false positives)', async () => {
+    const mismatchedKey = PrivateKey.generateED25519();
+    setTestMirrorMock({
+      getAccount: async (accId) => ({
+        account: accId,
+        alias: null,
+        auto_renew_period: 7776000,
+        balance: { balance: 1000000000, timestamp: '1', tokens: [] },
+        deleted: false,
+        evm_address: '0x0',
+        key: { _type: 'ED25519', key: mismatchedKey.publicKey.toStringRaw() },
+      }),
+    });
+
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    await assert.rejects(
+      async () => {
+        await testProvider.signTransaction(payerAccountId, tx);
+      },
+      /Signer public key mismatch/i
+    );
+  });
+
+  await t.test('Signer Security: successfully verifies ECDSA_SECP256K1 key structures', async () => {
+    const ecdsaAccountId = '0.0.222333';
+    testProvider.registerAccountKey(ecdsaAccountId, testEcdsaKey.toStringDer());
+
+    setTestMirrorMock({
+      getAccount: async (accId) => ({
+        account: accId,
+        alias: null,
+        auto_renew_period: 7776000,
+        balance: { balance: 1000000000, timestamp: '1', tokens: [] },
+        deleted: false,
+        evm_address: '0x0',
+        key: { _type: 'ECDSA_SECP256K1', key: testEcdsaKey.publicKey.toStringRaw() },
+      }),
+    });
+
+    const tx = buildTransferTransaction({
+      payerAccountId: ecdsaAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    const signedTx = await testProvider.signTransaction(ecdsaAccountId, tx);
+    assert.ok(signedTx);
+  });
+
+  await t.test('Signer Security: successfully verifies nested KeyList and ThresholdKey structures', async () => {
+    const multisigAccountId = '0.0.888999';
+    testProvider.registerAccountKey(multisigAccountId, testKey.toStringDer());
+
+    // Account registered on Mirror Node with a ThresholdKey containing a KeyList
+    setTestMirrorMock({
+      getAccount: async (accId) => ({
+        account: accId,
+        alias: null,
+        auto_renew_period: 7776000,
+        balance: { balance: 1000000000, timestamp: '1', tokens: [] },
+        deleted: false,
+        evm_address: '0x0',
+        key: {
+          _type: 'ThresholdKey',
+          threshold: 2,
+          keys: [
+            { _type: 'ED25519', key: 'aabbcc112233' },
+            {
+              _type: 'KeyList',
+              keys: [
+                { _type: 'ED25519', key: testKey.publicKey.toStringRaw() },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+
+    const tx = buildTransferTransaction({
+      payerAccountId: multisigAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    const signedTx = await testProvider.signTransaction(multisigAccountId, tx);
+    assert.ok(signedTx);
+  });
+
+  await t.test('Signer Security: rejects signing after account key unregistration (revocation)', async () => {
+    testProvider.unregisterAccountKey(payerAccountId);
+
+    const tx = buildTransferTransaction({
+      payerAccountId,
+      recipientAccountId,
+      assetId: '0.0.5449156',
+      atomicAmount: '5000000',
+    });
+
+    await assert.rejects(
+      async () => {
+        await testProvider.signTransaction(payerAccountId, tx);
+      },
+      /No signer configured for account/i
     );
   });
 });
