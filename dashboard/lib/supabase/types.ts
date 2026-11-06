@@ -453,6 +453,7 @@ export type Database = {
           network: string;
           recipient: string;
           status: string;
+          release_reason: string | null;
           expires_at: string;
           created_at: string;
           updated_at: string;
@@ -466,6 +467,7 @@ export type Database = {
           network: string;
           recipient: string;
           status?: string;
+          release_reason?: string | null;
           expires_at?: string;
           created_at?: string;
           updated_at?: string;
@@ -479,6 +481,7 @@ export type Database = {
           network?: string;
           recipient?: string;
           status?: string;
+          release_reason?: string | null;
           expires_at?: string;
           created_at?: string;
           updated_at?: string;
@@ -513,6 +516,7 @@ export type Database = {
           hashscan_url: string | null;
           hcs_topic_id: string | null;
           hcs_sequence_number: number | null;
+          hcs_status: string;
           failure_reason: string | null;
           confirmed_at: string | null;
           created_at: string;
@@ -537,6 +541,7 @@ export type Database = {
           hashscan_url?: string | null;
           hcs_topic_id?: string | null;
           hcs_sequence_number?: number | null;
+          hcs_status?: string;
           failure_reason?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
@@ -561,6 +566,7 @@ export type Database = {
           hashscan_url?: string | null;
           hcs_topic_id?: string | null;
           hcs_sequence_number?: number | null;
+          hcs_status?: string;
           failure_reason?: string | null;
           confirmed_at?: string | null;
           created_at?: string;

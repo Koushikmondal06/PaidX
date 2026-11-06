@@ -27,13 +27,18 @@ export function hashAgentToken(token: string): string {
 }
 
 /**
- * Authenticates an agent request and returns the agent context and authorized wallet
+ * Authenticates an agent request and returns the agent context and authorized wallet.
+ * Scoped strictly to the authenticated agent token hash and active Hedera wallet.
  */
 export async function authenticateAgentToken(rawToken: string): Promise<AgentContext | null> {
-  if (!rawToken) return null;
-  const cleanToken = rawToken.replace(/^Bearer\s+/i, '').trim();
-  const tokenHash = hashAgentToken(cleanToken);
+  if (!rawToken || typeof rawToken !== 'string') return null;
 
+  const cleanToken = rawToken.replace(/^Bearer\s+/i, '').trim();
+  if (!cleanToken || !cleanToken.startsWith('paidx_agt_')) {
+    return null;
+  }
+
+  const tokenHash = hashAgentToken(cleanToken);
   const supabase = createServerSupabaseClient();
 
   const { data: connection, error } = await supabase
@@ -62,18 +67,22 @@ export async function authenticateAgentToken(rawToken: string): Promise<AgentCon
   }
 
   const wallet = (connection as any).wallets;
+  if (!wallet || wallet.kind !== 'hedera' || !wallet.address) {
+    return null;
+  }
 
   return {
     agentId: connection.id,
     agentName: connection.agent_name,
     userId: connection.user_id,
     walletId: connection.wallet_id,
-    walletAddress: wallet?.address || process.env.HEDERA_OPERATOR_ID || '0.0.5449100',
+    walletAddress: wallet.address,
   };
 }
 
 /**
  * Checks agent spending policy and creates an atomic spending reservation
+ * using either the PostgreSQL stored procedure `reserve_agent_budget` or atomic SQL transaction.
  */
 export async function evaluateAndReserveBudget({
   agentId,
@@ -93,10 +102,66 @@ export async function evaluateAndReserveBudget({
   const supabase = createServerSupabaseClient();
   const amountBig = BigInt(atomicAmount);
 
-  // Check existing reservation for idempotency
+  // Try PostgreSQL RPC function first
+  try {
+    const { data: rpcResult, error: rpcError } = await (supabase as any).rpc(
+      'reserve_agent_budget',
+      {
+        p_agent_id: agentId,
+        p_idempotency_key: idempotencyKey,
+        p_atomic_amount: atomicAmount,
+        p_asset_symbol: assetSymbol,
+        p_network: network,
+        p_recipient: recipient,
+      }
+    );
+
+    if (!rpcError && rpcResult) {
+      const parsed = typeof rpcResult === 'string' ? JSON.parse(rpcResult) : rpcResult;
+      return {
+        allowed: Boolean(parsed.allowed),
+        requiresHumanApproval: Boolean(parsed.requires_human_approval),
+        reservationId: parsed.reservation_id,
+        reason: parsed.reason,
+        code: parsed.code,
+        dailyBudgetRemaining: parsed.daily_budget_remaining,
+      };
+    }
+  } catch (rpcErr) {
+    // If RPC is not available in local mock environment, proceed to application-level atomic check
+  }
+
+  // Application-level Atomic Check
+  // 1. Verify Agent Connection
+  const { data: connection } = await supabase
+    .from('agent_connections')
+    .select('id, status, expires_at')
+    .eq('id', agentId)
+    .single();
+
+  if (!connection || connection.status !== 'active') {
+    return {
+      allowed: false,
+      requiresHumanApproval: false,
+      reason: `Agent is ${connection?.status || 'not found'}.`,
+      code: 'AGENT_INACTIVE',
+    };
+  }
+
+  if (connection.expires_at && new Date(connection.expires_at) < new Date()) {
+    return {
+      allowed: false,
+      requiresHumanApproval: false,
+      reason: 'Agent token has expired.',
+      code: 'AGENT_EXPIRED',
+    };
+  }
+
+  // 2. Check existing reservation for idempotency
   const { data: existingReservation } = await supabase
     .from('agent_spending_reservations')
     .select('*')
+    .eq('agent_id', agentId)
     .eq('idempotency_key', idempotencyKey)
     .maybeSingle();
 
@@ -108,7 +173,7 @@ export async function evaluateAndReserveBudget({
     };
   }
 
-  // Load agent policy
+  // 3. Load agent policy
   const { data: policy, error: policyError } = await supabase
     .from('agent_policies')
     .select('*')
@@ -124,7 +189,7 @@ export async function evaluateAndReserveBudget({
     };
   }
 
-  // Validate network & asset
+  // 4. Validate network & asset
   if (policy.allowed_networks && policy.allowed_networks.length > 0) {
     const netMatch = policy.allowed_networks.some(
       (n: string) => n.toLowerCase() === network.toLowerCase()
@@ -153,7 +218,7 @@ export async function evaluateAndReserveBudget({
     }
   }
 
-  // Check recipient allowlist if set
+  // 5. Check recipient allowlist if set
   if (policy.allowed_recipients && policy.allowed_recipients.length > 0) {
     const recipientMatch = policy.allowed_recipients.some(
       (r: string) => r.toLowerCase() === recipient.toLowerCase()
@@ -168,13 +233,32 @@ export async function evaluateAndReserveBudget({
     }
   }
 
-  // Rollover daily spend if new day
+  // 6. Rollover daily & monthly spend
   const todayStr = new Date().toISOString().split('T')[0];
+  const currentMonthStr = todayStr.slice(0, 7);
   let spentToday = BigInt(policy.spent_today || '0');
   let spentThisMonth = BigInt(policy.spent_this_month || '0');
 
   if (policy.period_start_date !== todayStr) {
     spentToday = 0n;
+  }
+  if (policy.period_start_date && policy.period_start_date.slice(0, 7) !== currentMonthStr) {
+    spentThisMonth = 0n;
+  }
+
+  // Include active unexpired reservations
+  const { data: activeReservations } = await supabase
+    .from('agent_spending_reservations')
+    .select('amount')
+    .eq('agent_id', agentId)
+    .eq('status', 'reserved')
+    .gt('expires_at', new Date().toISOString());
+
+  let activeReservedTotal = 0n;
+  if (activeReservations) {
+    for (const r of activeReservations) {
+      activeReservedTotal += BigInt(r.amount);
+    }
   }
 
   const maxPerTx = BigInt(policy.max_amount_per_tx);
@@ -192,18 +276,21 @@ export async function evaluateAndReserveBudget({
   }
 
   // Check daily limit
-  if (spentToday + amountBig > dailyBudget) {
+  if (spentToday + activeReservedTotal + amountBig > dailyBudget) {
+    const available = dailyBudget > (spentToday + activeReservedTotal)
+      ? dailyBudget - (spentToday + activeReservedTotal)
+      : 0n;
     return {
       allowed: false,
       requiresHumanApproval: true,
-      reason: `Transaction would exceed daily spending budget. Available: ${(dailyBudget - spentToday).toString()}`,
+      reason: `Transaction would exceed daily spending budget. Available: ${available.toString()}`,
       code: 'DAILY_BUDGET_EXCEEDED',
-      dailyBudgetRemaining: (dailyBudget - spentToday).toString(),
+      dailyBudgetRemaining: available.toString(),
     };
   }
 
   // Check monthly limit
-  if (spentThisMonth + amountBig > monthlyBudget) {
+  if (spentThisMonth + activeReservedTotal + amountBig > monthlyBudget) {
     return {
       allowed: false,
       requiresHumanApproval: true,
@@ -221,7 +308,7 @@ export async function evaluateAndReserveBudget({
     return {
       allowed: false,
       requiresHumanApproval: true,
-      reason: 'Payment requires interactive human approval per spending policy',
+      reason: 'Payment requires human approval per spending policy',
       code: 'APPROVAL_REQUIRED',
     };
   }
@@ -237,6 +324,7 @@ export async function evaluateAndReserveBudget({
       network,
       recipient,
       status: 'reserved',
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     })
     .select()
     .single();
@@ -254,7 +342,7 @@ export async function evaluateAndReserveBudget({
     allowed: true,
     requiresHumanApproval: false,
     reservationId: reservation.id,
-    dailyBudgetRemaining: (dailyBudget - (spentToday + amountBig)).toString(),
+    dailyBudgetRemaining: (dailyBudget - (spentToday + activeReservedTotal + amountBig)).toString(),
   };
 }
 
@@ -271,6 +359,21 @@ export async function commitSettledReservation({
   atomicAmount: string;
 }) {
   const supabase = createServerSupabaseClient();
+
+  // Try PostgreSQL RPC function
+  try {
+    if (reservationId) {
+      await (supabase as any).rpc('commit_agent_reservation', {
+        p_agent_id: agentId,
+        p_reservation_id: reservationId,
+        p_atomic_amount: atomicAmount,
+      });
+      return;
+    }
+  } catch (rpcErr) {
+    // Fallback
+  }
+
   const amountBig = BigInt(atomicAmount);
 
   // Update reservation
@@ -306,13 +409,29 @@ export async function commitSettledReservation({
 }
 
 /**
- * Releases reservation if payment execution failed
+ * Releases reservation if payment execution failed definitively.
+ * NEVER call this if the transaction may have reached consensus.
  */
-export async function releaseFailedReservation(reservationId?: string) {
+export async function releaseFailedReservation(reservationId?: string, reason?: string) {
   if (!reservationId) return;
   const supabase = createServerSupabaseClient();
+
+  try {
+    await (supabase as any).rpc('release_agent_reservation', {
+      p_reservation_id: reservationId,
+      p_reason: reason || 'Payment failed',
+    });
+    return;
+  } catch (rpcErr) {
+    // Fallback
+  }
+
   await supabase
     .from('agent_spending_reservations')
-    .update({ status: 'released', updated_at: new Date().toISOString() })
-    .eq('id', reservationId);
+    .update({
+      status: 'released',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', reservationId)
+    .eq('status', 'reserved');
 }
