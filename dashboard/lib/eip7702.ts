@@ -141,16 +141,16 @@ export async function triggerSmartAccountUpgrade(
     const hexChainId = `0x${chainId.toString(16)}`;
 
     // MetaMask triggers the EIP-7702 upgrade flow when a batch of two calls is submitted
-    // Call 1 & 2: empty no-op calls to the user's own address
+    // Call 1 & 2: minimal no-op calls to user's address with valid non-empty hex data
     const calls = [
       {
         to: userAddress,
-        data: '0x',
+        data: '0x00',
         value: '0x0',
       },
       {
         to: userAddress,
-        data: '0x',
+        data: '0x00',
         value: '0x0',
       },
     ];
@@ -162,6 +162,7 @@ export async function triggerSmartAccountUpgrade(
           version: '1.0',
           chainId: hexChainId,
           from: userAddress,
+          atomicRequired: true,
           calls,
         },
       ],
@@ -169,13 +170,36 @@ export async function triggerSmartAccountUpgrade(
 
     return { success: true, callId };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Upgrade request failed';
-    console.error('[triggerSmartAccountUpgrade Exception]:', err);
+    const rawMsg =
+      (err as any)?.message ||
+      (err as any)?.data?.message ||
+      (err as any)?.error?.message ||
+      (err instanceof Error ? err.message : '') ||
+      '';
+    const code = (err as any)?.code;
 
-    if (msg.toLowerCase().includes('user rejected') || msg.toLowerCase().includes('denied')) {
+    console.error('[triggerSmartAccountUpgrade Exception]:', { code, message: rawMsg, error: err });
+
+    if (rawMsg.toLowerCase().includes('user rejected') || rawMsg.toLowerCase().includes('denied') || code === 4001) {
       return { success: false, error: 'Upgrade request was rejected in MetaMask.' };
     }
-    return { success: false, error: msg };
+
+    if (
+      code === -32601 ||
+      code === 4200 ||
+      rawMsg.includes('does not exist') ||
+      rawMsg.includes('not supported') ||
+      rawMsg.includes('not available') ||
+      rawMsg.includes('Method not found')
+    ) {
+      return {
+        success: false,
+        error:
+          'Your MetaMask version does not support automatic in-browser 7702 batch upgrading (wallet_sendCalls). You can continue with your standard EOA wallet or upgrade manually in MetaMask settings.',
+      };
+    }
+
+    return { success: false, error: rawMsg || 'Upgrade request failed' };
   }
 }
 
