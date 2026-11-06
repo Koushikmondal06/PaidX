@@ -1,4 +1,4 @@
-import { http, fallback, createPublicClient, createWalletClient, custom } from 'viem';
+import { http, fallback, createPublicClient, createWalletClient, custom, type Address } from 'viem';
 import { sepolia } from 'viem/chains';
 
 export { sepolia };
@@ -96,12 +96,14 @@ export function getServerPublicClient() {
 
 /**
  * Creates browser-safe viem wallet client backed by MetaMask (window.ethereum).
+ * If account is specified, it binds default signer to writeContract/sendTransaction.
  */
-export function getBrowserWalletClient() {
+export function getBrowserWalletClient(account?: Address) {
   if (typeof window === 'undefined' || !(window as any).ethereum) {
     throw new Error('MetaMask is not available in the browser.');
   }
   return createWalletClient({
+    account,
     chain: sepolia,
     transport: custom((window as any).ethereum),
   });
