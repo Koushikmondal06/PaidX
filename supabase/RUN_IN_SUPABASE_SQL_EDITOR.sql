@@ -502,3 +502,4 @@ DO $$
 BEGIN
   RAISE NOTICE 'PaidX Supabase Schema successfully migrated! POS Terminal #001 & Apex Retail merchant configured.';
 END $$;
+
