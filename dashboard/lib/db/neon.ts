@@ -1,56 +1,67 @@
 import 'server-only';
-import { neon, Pool, type NeonQueryFunction } from '@neondatabase/serverless';
+import { neon, Pool as NeonPool, type NeonQueryFunction } from '@neondatabase/serverless';
+import { Pool as PgPool } from 'pg';
 
 /**
- * Neon Postgres Client Module for PaidX
+ * Universal Database Client Module for PaidX
  * 
- * Best Practices (from Neon Skills):
- * 1. For web applications and serverless route handlers, use the pooled connection (DATABASE_URL).
- * 2. Uses '@neondatabase/serverless' HTTP transport for rapid, serverless single-roundtrip queries.
- * 3. Uses WebSocket Pool for long-running sessions or multi-statement transactions.
- * 4. Fallback to DATABASE_URL_UNPOOLED if direct connection is explicitly required.
+ * Supports both:
+ * 1. Supabase Postgres (via 'pg' connection pooling)
+ * 2. Neon Postgres (via '@neondatabase/serverless' HTTP/WebSocket transport)
  */
 
 const getConnectionString = (): string => {
   const url = process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
   if (!url) {
     throw new Error(
-      '[Neon DB] Missing DATABASE_URL or DATABASE_URL_UNPOOLED in environment. Run `neon deploy` or check .env.local.'
+      '[Database Error] Missing DATABASE_URL or DATABASE_URL_UNPOOLED in environment.'
     );
   }
   return url;
 };
 
-// Singleton HTTP query client
-let cachedSql: NeonQueryFunction<false, false> | null = null;
-
+// Singleton Neon HTTP query client
+let cachedNeonSql: NeonQueryFunction<false, false> | null = null;
 export function getNeonSql(): NeonQueryFunction<false, false> {
-  if (!cachedSql) {
+  if (!cachedNeonSql) {
     const connStr = getConnectionString();
-    cachedSql = neon(connStr);
+    cachedNeonSql = neon(connStr);
   }
-  return cachedSql;
+  return cachedNeonSql;
 }
 
-// Singleton connection pool (WebSocket transport)
-let cachedPool: Pool | null = null;
-
-export function getNeonPool(): Pool {
-  if (!cachedPool) {
+// Singleton pg Pool (for Supabase & standard Postgres)
+let cachedPgPool: PgPool | null = null;
+export function getPgPool(): PgPool {
+  if (!cachedPgPool) {
     const connStr = getConnectionString();
-    cachedPool = new Pool({ connectionString: connStr });
+    cachedPgPool = new PgPool({
+      connectionString: connStr,
+      ssl: { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
   }
-  return cachedPool;
+  return cachedPgPool;
 }
 
 /**
- * Execute a parameterized SQL query on Neon Postgres via HTTP.
+ * Execute a parameterized SQL query on the active Postgres database.
  */
 export async function query<T = any>(sqlText: string, params: any[] = []): Promise<T[]> {
-  const sql = getNeonSql();
-  // Using neon serverless HTTP query with parameter array
-  const rows = (await (sql as any).query(sqlText, params)) as unknown as T[];
-  return rows;
+  const connStr = getConnectionString();
+
+  if (connStr.includes('neon.tech')) {
+    const sql = getNeonSql();
+    const rows = (await (sql as any).query(sqlText, params)) as unknown as T[];
+    return rows;
+  }
+
+  // Supabase or standard PostgreSQL via pg Pool
+  const pool = getPgPool();
+  const { rows } = await pool.query(sqlText, params);
+  return rows as T[];
 }
 
 /**
@@ -62,7 +73,7 @@ export async function queryOne<T = any>(sqlText: string, params: any[] = []): Pr
 }
 
 /**
- * Neon health verification check.
+ * Database health verification check.
  */
 export async function checkNeonConnection() {
   const start = Date.now();
@@ -74,10 +85,17 @@ export async function checkNeonConnection() {
   }>(`SELECT NOW() as server_time, version() as version, current_database() as database, current_user as "user"`);
 
   const latencyMs = Date.now() - start;
+  const connStr = getConnectionString();
+  const provider = connStr.includes('supabase')
+    ? 'Supabase Postgres (Project: nuvxeixxxrtgaijmdswl)'
+    : connStr.includes('neon.tech')
+    ? 'Neon Lakebase Postgres'
+    : 'PostgreSQL';
 
   return {
     ok: true,
     latencyMs,
+    provider,
     serverTime: rows[0]?.server_time,
     database: rows[0]?.database,
     user: rows[0]?.user,
