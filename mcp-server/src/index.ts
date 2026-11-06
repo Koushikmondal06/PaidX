@@ -13,11 +13,32 @@ import {
   verifyDurableSessionId,
   maskToken,
   getTokenHashPrefix,
+  getServerOrigin,
+  getWwwAuthenticateHeader,
+  handleProtectedResourceMetadata,
+  handleAuthorizationServerMetadata,
+  handleClientRegistration,
+  handleOAuthAuthorize,
+  handleOAuthToken,
+  handleOAuthRevoke,
+  generateAuthorizationCode,
+  verifyAuthorizationCode,
+  generateOAuthTokens,
+  verifyOAuthAccessToken,
+  verifyOAuthRefreshToken,
+  validateAuthHeader,
   sessions,
   sseLegacyTransports,
   tokenValidationCache,
+  registeredClients,
+  usedAuthorizationCodes,
+  revokedTokenIds,
   DurableSessionPayload,
   ActiveMcpSession,
+  AuthorizationCodePayload,
+  OAuthAccessTokenPayload,
+  OAuthRefreshTokenPayload,
+  RegisteredClient,
 } from './server.js';
 import { MCP_TOOL_DEFINITIONS } from './tools.js';
 
@@ -35,20 +56,46 @@ export {
   verifyDurableSessionId,
   maskToken,
   getTokenHashPrefix,
+  getServerOrigin,
+  getWwwAuthenticateHeader,
+  handleProtectedResourceMetadata,
+  handleAuthorizationServerMetadata,
+  handleClientRegistration,
+  handleOAuthAuthorize,
+  handleOAuthToken,
+  handleOAuthRevoke,
+  generateAuthorizationCode,
+  verifyAuthorizationCode,
+  generateOAuthTokens,
+  verifyOAuthAccessToken,
+  verifyOAuthRefreshToken,
+  validateAuthHeader,
   sessions,
   sseLegacyTransports,
   tokenValidationCache,
+  registeredClients,
+  usedAuthorizationCodes,
+  revokedTokenIds,
   MCP_TOOL_DEFINITIONS,
 };
 
-export type { DurableSessionPayload, ActiveMcpSession };
+export type {
+  DurableSessionPayload,
+  ActiveMcpSession,
+  AuthorizationCodePayload,
+  OAuthAccessTokenPayload,
+  OAuthRefreshTokenPayload,
+  RegisteredClient,
+};
 
-// Standalone Node.js HTTP server instance (used for local development and test runners)
+// Standalone Node.js HTTP server instance (used for local development, Render deployment, and test runners)
 const server = http.createServer(handleVercelRequest);
 
 export async function shutdownMcpServer(): Promise<void> {
   sessions.clear();
   tokenValidationCache.clear();
+  usedAuthorizationCodes.clear();
+  revokedTokenIds.clear();
   return new Promise((resolve) => {
     server.close(() => resolve());
   });
@@ -84,6 +131,8 @@ export function startMcpServer(port: number = PORT, host: string = HOST): http.S
     console.log(`  Tools: ${MCP_TOOL_DEFINITIONS.length} registered`);
     console.log(`  Streamable HTTP Endpoint: http://${host}:${port}/mcp`);
     console.log(`  Health Endpoint: http://${host}:${port}/health`);
+    console.log(`  OAuth 2.1 Metadata: http://${host}:${port}/.well-known/oauth-authorization-server`);
+    console.log(`  Protected Resource Metadata: http://${host}:${port}/.well-known/oauth-protected-resource`);
     console.log(`  Connected Backend Orchestrator: ${PAIDX_BACKEND_URL}`);
     console.log(`=======================================================`);
   });

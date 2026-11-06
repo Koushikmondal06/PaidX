@@ -19370,9 +19370,31 @@ var SESSION_TTL_MS = 24 * 60 * 60 * 1e3;
 var TOKEN_CACHE_TTL_MS = 10 * 1e3;
 var SESSION_SECRET = process.env.MCP_SESSION_SECRET || process.env.SUPABASE_SECRET_KEY || "paidx_mcp_durable_session_signing_secret_v1";
 var sessions = /* @__PURE__ */ new Map();
+var revokedTokenIds = /* @__PURE__ */ new Set();
 var tokenValidationCache = /* @__PURE__ */ new Map();
 function getTokenHashPrefix(token) {
   return (0, import_crypto.createHash)("sha256").update(token.trim()).digest("hex").slice(0, 16);
+}
+function getServerOrigin(req) {
+  if (process.env.MCP_PUBLIC_URL) {
+    return process.env.MCP_PUBLIC_URL.replace(/\/mcp\/?$/, "").replace(/\/$/, "");
+  }
+  if (process.env.NEXT_PUBLIC_MCP_SERVER_URL) {
+    return process.env.NEXT_PUBLIC_MCP_SERVER_URL.replace(/\/mcp\/?$/, "").replace(/\/$/, "");
+  }
+  if (req?.headers.host) {
+    const proto = req.headers["x-forwarded-proto"] || (req.headers.host.includes("localhost") || req.headers.host.includes("127.0.0.1") ? "http" : "https");
+    return `${proto}://${req.headers.host}`;
+  }
+  return process.env.NODE_ENV === "production" ? "https://mcp-paidx.onrender.com" : "http://localhost:3002";
+}
+function getWwwAuthenticateHeader(origin, error2) {
+  const prmUrl = `${origin}/.well-known/oauth-protected-resource`;
+  if (!error2) {
+    return `Bearer resource_metadata="${prmUrl}"`;
+  }
+  const cleanError = error2.replace(/"/g, "'");
+  return `Bearer error="invalid_token", error_description="${cleanError}", resource_metadata="${prmUrl}"`;
 }
 function generateDurableSessionId(bearerToken) {
   const sid = (0, import_crypto.randomUUID)();
@@ -19524,6 +19546,104 @@ async function validateAgentTokenWithBackend(authHeader, backendUrl = getBackend
     };
   }
 }
+function verifyOAuthAccessToken(token) {
+  if (!token || typeof token !== "string" || !token.startsWith("paidx_oat_")) {
+    return { valid: false, error: "Invalid OAuth access token format" };
+  }
+  const raw = token.slice("paidx_oat_".length);
+  const dotIndex = raw.indexOf(".");
+  if (dotIndex === -1) {
+    return { valid: false, error: "Malformed OAuth access token" };
+  }
+  const payloadB64 = raw.slice(0, dotIndex);
+  const providedSig = raw.slice(dotIndex + 1);
+  const expectedSig = (0, import_crypto.createHmac)("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const bufProvided = Buffer.from(providedSig);
+  const bufExpected = Buffer.from(expectedSig);
+  if (bufProvided.length !== bufExpected.length || !(0, import_crypto.timingSafeEqual)(bufProvided, bufExpected)) {
+    return { valid: false, error: "Invalid OAuth access token signature" };
+  }
+  try {
+    const payload = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf-8")
+    );
+    if (payload.type !== "access") {
+      return { valid: false, error: "Not an OAuth access token" };
+    }
+    if (revokedTokenIds.has(payload.tokenId)) {
+      return { valid: false, error: "OAuth token has been revoked" };
+    }
+    if (Date.now() > payload.expiresAt) {
+      return { valid: false, error: "OAuth access token has expired" };
+    }
+    return { valid: true, payload };
+  } catch {
+    return { valid: false, error: "Failed to parse OAuth access token payload" };
+  }
+}
+async function validateAuthHeader(authHeader, backendUrl = getBackendUrl(), origin = getServerOrigin()) {
+  if (!authHeader || typeof authHeader !== "string") {
+    return {
+      valid: false,
+      error: "Unauthorized: Missing PaidX Agent Bearer Token in Authorization header.",
+      code: -32001,
+      wwwAuthHeader: getWwwAuthenticateHeader(origin)
+    };
+  }
+  const cleanHeader = authHeader.trim();
+  const lower = cleanHeader.toLowerCase();
+  if (lower.startsWith("bearer paidx_oat_")) {
+    const rawToken = cleanHeader.slice(7).trim();
+    const oauthCheck = verifyOAuthAccessToken(rawToken);
+    if (!oauthCheck.valid || !oauthCheck.payload) {
+      const err = oauthCheck.error || "Unauthorized: Invalid OAuth access token.";
+      return {
+        valid: false,
+        error: err,
+        code: -32001,
+        wwwAuthHeader: getWwwAuthenticateHeader(origin, err)
+      };
+    }
+    const mappedAgentToken = oauthCheck.payload.agentToken;
+    const backendCheck = await validateAgentTokenWithBackend(mappedAgentToken, backendUrl);
+    if (!backendCheck.valid) {
+      return {
+        valid: false,
+        error: backendCheck.error,
+        code: backendCheck.code || -32001,
+        wwwAuthHeader: getWwwAuthenticateHeader(origin, backendCheck.error)
+      };
+    }
+    return {
+      valid: true,
+      effectiveAgentToken: mappedAgentToken,
+      wwwAuthHeader: ""
+    };
+  }
+  if (lower.startsWith("bearer paidx_agt_")) {
+    const backendCheck = await validateAgentTokenWithBackend(cleanHeader, backendUrl);
+    if (!backendCheck.valid) {
+      return {
+        valid: false,
+        error: backendCheck.error,
+        code: backendCheck.code || -32001,
+        wwwAuthHeader: getWwwAuthenticateHeader(origin, backendCheck.error)
+      };
+    }
+    return {
+      valid: true,
+      effectiveAgentToken: cleanHeader,
+      wwwAuthHeader: ""
+    };
+  }
+  const formatErr = 'Unauthorized: Invalid token format. Must be "Bearer paidx_agt_<secret>" or "Bearer paidx_oat_<token>".';
+  return {
+    valid: false,
+    error: formatErr,
+    code: -32001,
+    wwwAuthHeader: getWwwAuthenticateHeader(origin, formatErr)
+  };
+}
 function createMcpSdkServer(bearerToken, backendUrl = getBackendUrl()) {
   const mcpServer = new Server(
     {
@@ -19557,7 +19677,7 @@ function createMcpSdkServer(bearerToken, backendUrl = getBackendUrl()) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: bearerToken
+          Authorization: bearerToken.startsWith("Bearer ") ? bearerToken : `Bearer ${bearerToken}`
         },
         body: JSON.stringify({
           jsonrpc: "2.0",
@@ -19644,7 +19764,10 @@ function applyCorsHeaders(req, res) {
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, last-event-id, accept"
   );
-  res.setHeader("Access-Control-Expose-Headers", "mcp-session-id, mcp-protocol-version");
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    "WWW-Authenticate, mcp-session-id, mcp-protocol-version"
+  );
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
@@ -19656,6 +19779,7 @@ async function handleMcpRequest(req, res) {
   if (applyCorsHeaders(req, res)) {
     return;
   }
+  const origin = getServerOrigin(req);
   if (req.method === "DELETE") {
     const sessionId = req.headers["mcp-session-id"] || "";
     if (!sessionId) {
@@ -19672,6 +19796,7 @@ async function handleMcpRequest(req, res) {
     const authHeader = req.headers["authorization"] || "";
     const verification = verifyDurableSessionId(sessionId, authHeader || void 0);
     if (!verification.valid) {
+      res.setHeader("WWW-Authenticate", getWwwAuthenticateHeader(origin, verification.error));
       res.writeHead(verification.code || 404, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -19693,6 +19818,7 @@ async function handleMcpRequest(req, res) {
       const authHeader = req.headers["authorization"] || "";
       const verification = verifyDurableSessionId(sessionId, authHeader || void 0);
       if (!verification.valid) {
+        res.setHeader("WWW-Authenticate", getWwwAuthenticateHeader(origin, verification.error));
         res.writeHead(verification.code || 404, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -19740,6 +19866,7 @@ async function handleMcpRequest(req, res) {
     if (sessionId) {
       const sessionCheck = verifyDurableSessionId(sessionId, authHeader || void 0);
       if (!sessionCheck.valid) {
+        res.setHeader("WWW-Authenticate", getWwwAuthenticateHeader(origin, sessionCheck.error));
         res.writeHead(sessionCheck.code || 404, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -19751,35 +19878,23 @@ async function handleMcpRequest(req, res) {
         return;
       }
     }
-    if (!authHeader) {
+    const authResult = await validateAuthHeader(authHeader, getBackendUrl(), origin);
+    if (!authResult.valid || !authResult.effectiveAgentToken) {
+      res.setHeader("WWW-Authenticate", authResult.wwwAuthHeader);
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
           jsonrpc: "2.0",
           error: {
-            code: -32001,
-            message: "Unauthorized: Missing PaidX Agent Bearer Token in Authorization header."
+            code: authResult.code || -32001,
+            message: authResult.error || "Unauthorized: Missing or invalid PaidX Agent Bearer Token."
           },
           id: null
         })
       );
       return;
     }
-    const validation = await validateAgentTokenWithBackend(authHeader);
-    if (!validation.valid) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          error: {
-            code: validation.code || -32001,
-            message: validation.error || "Unauthorized: Invalid PaidX Agent Token."
-          },
-          id: null
-        })
-      );
-      return;
-    }
+    const effectiveAgentToken = authResult.effectiveAgentToken;
     let accept = req.headers["accept"] || "";
     if (!accept.includes("text/event-stream") || !accept.includes("application/json")) {
       req.headers["accept"] = "application/json, text/event-stream";
@@ -19811,7 +19926,7 @@ async function handleMcpRequest(req, res) {
         sessionIdGenerator: void 0,
         enableJsonResponse: true
       });
-      const mcpServerInstance = createMcpSdkServer(authHeader.trim());
+      const mcpServerInstance = createMcpSdkServer(effectiveAgentToken);
       await mcpServerInstance.connect(transport);
       await transport.handleRequest(req, res, parsedBody);
       return;
