@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "NODE_PATH=./node_modules:../mcp-server/node_modules ../mcp-server/node_modules/.bin/tsx --tsconfig tsconfig.json -C react-server --test --test-force-exit ../test/unit/*.test.ts"
   },
   "dependencies": {
     "@hiero-ledger/sdk": "^2.90.1",
