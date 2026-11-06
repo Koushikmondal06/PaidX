@@ -704,9 +704,19 @@ export default function OnboardingPage() {
             </div>
 
             {upgradeError && (
-              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2 font-mono">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{upgradeError}</span>
+              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-col gap-2 font-mono">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                  <span>{upgradeError}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStep(4)}
+                  className="w-full mt-1 font-mono text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
+                >
+                  Continue with Standard Wallet &rarr;
+                </Button>
               </div>
             )}
 
@@ -729,7 +739,7 @@ export default function OnboardingPage() {
                 )}
               </Button>
 
-              <div className="text-center">
+              <div className="flex items-center justify-between pt-1 px-1">
                 <button
                   type="button"
                   onClick={handleRecheckUpgrade}
@@ -737,7 +747,15 @@ export default function OnboardingPage() {
                   className="text-xs font-mono text-indigo-400 hover:underline inline-flex items-center gap-1"
                 >
                   <RefreshCw className={`w-3 h-3 ${isCheckingUpgrade ? 'animate-spin' : ''}`} />
-                  Check Upgrade Status Again
+                  Check Upgrade Status
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep(4)}
+                  className="text-xs font-mono text-emerald-400 hover:underline inline-flex items-center gap-1 font-bold"
+                >
+                  Skip & Continue &rarr;
                 </button>
               </div>
             </div>
