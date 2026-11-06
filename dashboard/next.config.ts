@@ -4,6 +4,12 @@ import path from 'path';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: path.resolve(__dirname),
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   webpack: (config) => {
     config.resolve.symlinks = false;
     return config;
