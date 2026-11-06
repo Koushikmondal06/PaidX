@@ -15,6 +15,7 @@ import {
   isAddress,
   zeroAddress,
   parseUnits,
+  parseEther,
   formatUnits,
   type Address,
   type Hash,
@@ -61,6 +62,11 @@ export default function ConsoleWalletPage() {
   const [copied, setCopied] = useState(false);
   const [watchAssetStatus, setWatchAssetStatus] = useState<'idle' | 'success' | 'rejected'>('idle');
 
+  // Backend session relayer state
+  const [relayerAddress, setRelayerAddress] = useState<Address | null>(null);
+  const [relayerBalance, setRelayerBalance] = useState<bigint>(0n);
+  const [isFundingRelayer, setIsFundingRelayer] = useState(false);
+
   // Load active session and connected address
   useEffect(() => {
     async function loadSession() {
@@ -70,6 +76,14 @@ export default function ConsoleWalletPage() {
       if (addr && isAddress(addr)) {
         setConnectedAddress(addr);
       }
+      fetch('/api/session-account')
+        .then((r) => r.json())
+        .then((d) => {
+          if (d?.sessionAccountAddress && isAddress(d.sessionAccountAddress)) {
+            setRelayerAddress(d.sessionAccountAddress as Address);
+          }
+        })
+        .catch(() => {});
     }
     loadSession();
   }, []);
@@ -103,6 +117,12 @@ export default function ConsoleWalletPage() {
         })) as bigint;
         setUsdcRawBalance(usdcBal);
       }
+
+      // 3. Relayer gas balance
+      if (relayerAddress) {
+        const rBal = await publicClient.getBalance({ address: relayerAddress });
+        setRelayerBalance(rBal);
+      }
     } catch (err: unknown) {
       console.error('[Console Wallet] Balance fetch error:', err);
       const msg = err instanceof Error ? err.message : 'Failed to query on-chain balances';
@@ -110,7 +130,29 @@ export default function ConsoleWalletPage() {
     } finally {
       setIsLoadingBalances(false);
     }
-  }, [connectedAddress]);
+  }, [connectedAddress, relayerAddress]);
+
+  const handleFundRelayer = async () => {
+    if (!relayerAddress || !connectedAddress) return;
+    setIsFundingRelayer(true);
+    setBalanceError(null);
+    try {
+      const walletClient = await getBrowserWalletClient(connectedAddress);
+      const publicClient = getBrowserPublicClient();
+      const hash = await walletClient.sendTransaction({
+        account: connectedAddress,
+        to: relayerAddress,
+        value: parseEther('0.005'),
+      });
+      await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+      await fetchBalances();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fund session relayer';
+      setBalanceError(msg);
+    } finally {
+      setIsFundingRelayer(false);
+    }
+  };
 
   useEffect(() => {
     if (connectedAddress) {
@@ -267,7 +309,8 @@ export default function ConsoleWalletPage() {
         }
       }
 
-      const walletClient = getBrowserWalletClient();
+      const senderAddress = connectedAddress as Address;
+      const walletClient = await getBrowserWalletClient(senderAddress);
       const publicClient = getBrowserPublicClient();
       const targetToken = SUPPORTED_TOKENS[selectedCurrency];
       const parsedAmount = parseUnits(amount.trim(), targetToken.decimals);
@@ -278,6 +321,7 @@ export default function ConsoleWalletPage() {
       if (selectedCurrency === 'ETH') {
         // Native ETH transfer
         hash = await walletClient.sendTransaction({
+          account: senderAddress,
           to: recipientAddr,
           value: parsedAmount,
         });
@@ -287,6 +331,7 @@ export default function ConsoleWalletPage() {
         if (!tokenAddr) throw new Error('Payment token contract address is not configured.');
 
         hash = await walletClient.writeContract({
+          account: senderAddress,
           address: tokenAddr,
           abi: ERC20_ABI,
           functionName: 'transfer',
@@ -361,7 +406,7 @@ export default function ConsoleWalletPage() {
                 <Wallet className="w-6 h-6 text-indigo-400" />
                 Console Wallet
               </h1>
-              <Badge variant="outline" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs">
+              <Badge variant="info" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs">
                 Sepolia Testnet
               </Badge>
             </div>
@@ -446,7 +491,7 @@ export default function ConsoleWalletPage() {
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">Payment Currency</span>
-              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs">
+              <Badge variant="active" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs">
                 ERC-20
               </Badge>
             </div>
@@ -478,7 +523,7 @@ export default function ConsoleWalletPage() {
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">Gas Currency</span>
-              <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
+              <Badge variant="info" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
                 Native
               </Badge>
             </div>
@@ -507,6 +552,44 @@ export default function ConsoleWalletPage() {
           </div>
         </div>
       </Card>
+
+      {/* Session Relayer Gas Card */}
+      {relayerAddress && (
+        <Card className="p-4 sm:p-5 border-slate-800 bg-slate-900/60 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-white">POS Tap Settlement Relayer</span>
+              <Badge variant={relayerBalance > 0n ? 'active' : 'warning'} className="text-[10px]">
+                {relayerBalance > 0n ? 'Gas Ready' : 'Low Gas'}
+              </Badge>
+            </div>
+            <p className="text-[11px] font-mono text-slate-400">
+              Address: <span className="text-slate-300">{truncateAddress(relayerAddress)}</span> • Balance:{' '}
+              <strong className="text-white">{Number(formatUnits(relayerBalance, 18)).toFixed(5)} ETH</strong>
+            </p>
+            <p className="text-[11px] text-slate-500">
+              PaidX server account that submits on-chain card tap redemptions.
+            </p>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleFundRelayer}
+            disabled={isFundingRelayer || !connectedAddress}
+            className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 font-mono text-xs whitespace-nowrap self-start sm:self-auto"
+          >
+            {isFundingRelayer ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                Funding Relayer...
+              </>
+            ) : (
+              <>Fund Relayer (0.005 ETH)</>
+            )}
+          </Button>
+        </Card>
+      )}
 
       {/* Send Form Card */}
       <Card className="p-6 border-slate-800 bg-slate-900/90 shadow-xl space-y-6">

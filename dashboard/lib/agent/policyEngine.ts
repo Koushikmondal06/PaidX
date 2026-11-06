@@ -1,6 +1,11 @@
 import 'server-only';
 import crypto from 'crypto';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import {
+  normalizeToUsdMicro,
+  PriceOracleError,
+  type PriceQuote,
+} from './priceOracle';
 
 export interface AgentContext {
   agentId: string;
@@ -17,6 +22,10 @@ export interface PolicyCheckResult {
   reason?: string;
   code?: string;
   dailyBudgetRemaining?: string;
+  normalizedAmountUsdMicro?: string;
+  priceSource?: string;
+  priceUsd?: string;
+  priceTimestamp?: number;
 }
 
 /**
@@ -83,8 +92,8 @@ export async function authenticateAgentToken(rawToken: string): Promise<AgentCon
 /**
  * Checks agent spending policy and creates an atomic spending reservation
  * using the PostgreSQL stored procedure `reserve_agent_budget`.
+ * Evaluates spending against limits using normalized USD-micro denomination ($10^-6 USD).
  * Strictly executes with row-level locks and fail-closed security.
- * Non-atomic application-level fallback logic is completely removed.
  */
 export async function evaluateAndReserveBudget({
   agentId,
@@ -93,6 +102,8 @@ export async function evaluateAndReserveBudget({
   network,
   recipient,
   idempotencyKey,
+  normalizedAmountUsdMicro,
+  priceQuote,
 }: {
   agentId: string;
   atomicAmount: string;
@@ -100,10 +111,42 @@ export async function evaluateAndReserveBudget({
   network: string;
   recipient: string;
   idempotencyKey: string;
+  normalizedAmountUsdMicro?: string;
+  priceQuote?: PriceQuote;
 }): Promise<PolicyCheckResult> {
+  // 1. Normalize amount into USD-micro denomination if not pre-computed
+  let effectiveNormalized = normalizedAmountUsdMicro;
+  let effectiveQuote = priceQuote;
+
+  if (!effectiveNormalized) {
+    try {
+      const normalized = await normalizeToUsdMicro({
+        rawAtomicAmount: atomicAmount,
+        assetSymbol,
+        priceOverride: priceQuote,
+      });
+      effectiveNormalized = normalized.normalizedAmountUsdMicro;
+      effectiveQuote = normalized.priceQuote;
+    } catch (err: unknown) {
+      const code = err instanceof PriceOracleError ? err.code : 'PRICE_ORACLE_UNAVAILABLE';
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        allowed: false,
+        requiresHumanApproval: false,
+        code,
+        reason: `Spending limit evaluation failed closed: ${msg}`,
+      };
+    }
+  }
+
   const supabase = createServerSupabaseClient();
 
-  // Execute atomic PostgreSQL stored procedure
+  // 2. Execute atomic PostgreSQL stored procedure with normalized USD-micro parameters
+  // Parameter order strictly matches PostgreSQL function declaration
+  const priceTimestampIso = effectiveQuote?.timestamp
+    ? new Date(effectiveQuote.timestamp).toISOString()
+    : null;
+
   const { data: rpcResult, error: rpcError } = await (supabase as any).rpc(
     'reserve_agent_budget',
     {
@@ -113,6 +156,10 @@ export async function evaluateAndReserveBudget({
       p_asset_symbol: assetSymbol,
       p_network: network,
       p_recipient: recipient,
+      p_amount_usd_micro: effectiveNormalized,
+      p_price_source: effectiveQuote?.source || null,
+      p_price_usd: effectiveQuote?.priceUsd || null,
+      p_price_timestamp: priceTimestampIso,
     }
   );
 
@@ -144,6 +191,10 @@ export async function evaluateAndReserveBudget({
     reason: parsed.reason,
     code: parsed.code,
     dailyBudgetRemaining: parsed.daily_budget_remaining,
+    normalizedAmountUsdMicro: parsed.normalized_amount_usd_micro || effectiveNormalized,
+    priceSource: effectiveQuote?.source,
+    priceUsd: effectiveQuote?.priceUsd,
+    priceTimestamp: effectiveQuote?.timestamp,
   };
 }
 

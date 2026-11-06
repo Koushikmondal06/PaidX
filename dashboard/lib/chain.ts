@@ -1,7 +1,8 @@
-import { http, fallback, createPublicClient } from 'viem';
+import { http, fallback, createPublicClient, createWalletClient, custom, type Address } from 'viem';
 import { sepolia } from 'viem/chains';
+import { PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
 
-export { sepolia };
+export { sepolia, PAYMENT_TOKEN_ADDRESS };
 
 export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '11155111', 10);
 
@@ -91,5 +92,69 @@ export function getServerPublicClient() {
   return createPublicClient({
     chain: sepolia,
     transport: getServerTransport(),
+  });
+}
+
+export const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7'; // 11155111
+
+/**
+ * Ensures MetaMask / injected web3 provider is connected to Ethereum Sepolia (11155111).
+ * If the current chain is not Sepolia, prompts MetaMask to switch or add the chain.
+ */
+export async function ensureSepoliaNetwork(ethereum?: any): Promise<void> {
+  const provider = ethereum || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+  if (!provider || !provider.request) {
+    throw new Error('MetaMask is not available in the browser.');
+  }
+
+  try {
+    const currentChainId = await provider.request({ method: 'eth_chainId' });
+    if (typeof currentChainId === 'string' && currentChainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX.toLowerCase()) {
+      return;
+    }
+
+    await provider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+    });
+  } catch (switchError: any) {
+    // 4902 indicates that the chain has not been added to MetaMask
+    if (switchError?.code === 4902 || switchError?.message?.includes('4902')) {
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [
+          {
+            chainId: SEPOLIA_CHAIN_ID_HEX,
+            chainName: 'Sepolia',
+            nativeCurrency: {
+              name: 'Sepolia Ether',
+              symbol: 'ETH',
+              decimals: 18,
+            },
+            rpcUrls: ['https://rpc.sepolia.org', 'https://sepolia.gateway.tenderly.co'],
+            blockExplorerUrls: ['https://sepolia.etherscan.io'],
+          },
+        ],
+      });
+    } else {
+      throw switchError;
+    }
+  }
+}
+
+/**
+ * Creates browser-safe viem wallet client backed by MetaMask (window.ethereum).
+ * If account is specified, it binds default signer to writeContract/sendTransaction.
+ * Automatically ensures MetaMask is switched to Ethereum Sepolia before creating the client.
+ */
+export async function getBrowserWalletClient(account?: Address) {
+  if (typeof window === 'undefined' || !(window as any).ethereum) {
+    throw new Error('MetaMask is not available in the browser.');
+  }
+  await ensureSepoliaNetwork((window as any).ethereum);
+  return createWalletClient({
+    account,
+    chain: sepolia,
+    transport: custom((window as any).ethereum),
   });
 }

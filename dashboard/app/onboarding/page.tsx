@@ -12,8 +12,8 @@ import { getRealUserSession, UserSession, UserRole } from '@/lib/auth';
 import { PAYMENT_TOKEN_ADDRESS, truncateAddress, getExplorerTxUrl } from '@/lib/base';
 import { getBrowserPublicClient, getBrowserWalletClient, CHAIN_ID } from '@/lib/chain';
 import { getUpgradeStatus, checkWalletCapabilities, triggerSmartAccountUpgrade, UpgradeStatusResult } from '@/lib/eip7702';
-import { getCardRegistryAddress, CARD_REGISTRY_ABI } from '@/lib/contracts';
-import { isAddress, type Address, type Hash } from 'viem';
+import { getCardRegistryAddress, CARD_REGISTRY_ABI, ERC20_ABI } from '@/lib/contracts';
+import { isAddress, parseUnits, type Address, type Hash, type Hex } from 'viem';
 import {
   Wallet,
   CreditCard,
@@ -95,9 +95,61 @@ export default function OnboardingPage() {
       if (s.eoaAddress && isAddress(s.eoaAddress)) {
         setConnectedAddress(s.eoaAddress as Address);
       }
+      // Re-fetch primary wallet from Supabase to persist walletId across refresh
+      const { data: w } = await supabase
+        .from('wallets')
+        .select('id, address')
+        .eq('user_id', s.id)
+        .order('is_primary', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (w) {
+        setWalletId(w.id);
+        if (w.address && isAddress(w.address)) {
+          setConnectedAddress(w.address as Address);
+          const statusRes = await getUpgradeStatus(w.address as Address);
+          setUpgradeStatus(statusRes);
+        }
+      }
     }
     init();
-  }, [router]);
+  }, [router, supabase]);
+
+  // AccountsChanged listener
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.ethereum) return;
+
+    const handleAccountsChanged = async (accounts: unknown) => {
+      const accList = accounts as string[];
+      if (accList && accList.length > 0 && isAddress(accList[0])) {
+        const newAddr = accList[0].toLowerCase() as Address;
+        setConnectedAddress(newAddr);
+        const statusRes = await getUpgradeStatus(newAddr);
+        setUpgradeStatus(statusRes);
+        const s = await getRealUserSession();
+        setSession(s);
+      }
+    };
+
+    window.ethereum.on?.('accountsChanged', handleAccountsChanged);
+    return () => {
+      window.ethereum.removeListener?.('accountsChanged', handleAccountsChanged);
+    };
+  }, []);
+
+  const handleSwitchWallet = async () => {
+    if (typeof window === 'undefined' || !window.ethereum) return;
+    try {
+      await window.ethereum.request({
+        method: 'wallet_requestPermissions',
+        params: [{ eth_accounts: {} }],
+      });
+      await handleConnectWallet();
+    } catch (err) {
+      console.warn('[Onboarding] Switch wallet error:', err);
+    }
+  };
 
   // Ensure user is on Sepolia
   const ensureSepoliaChain = async () => {
@@ -237,9 +289,9 @@ export default function OnboardingPage() {
     }
   };
 
-  // Step 4: Grant ERC-7715 Permission
+  // Step 4: Grant Spending Allowance
   const handleGrantPermission = async () => {
-    if (!connectedAddress || !walletId) return;
+    if (!connectedAddress) return;
     setIsSavingPermission(true);
     setPermissionError(null);
 
@@ -250,6 +302,20 @@ export default function OnboardingPage() {
         throw new Error('Please enter a valid spending limit greater than 0.');
       }
 
+      let effectiveWalletId = walletId;
+      if (!effectiveWalletId && connectedAddress) {
+        const { data: w } = await supabase
+          .from('wallets')
+          .select('id')
+          .eq('address', connectedAddress.toLowerCase())
+          .maybeSingle();
+        effectiveWalletId = w?.id || null;
+      }
+
+      if (!effectiveWalletId) {
+        throw new Error('Please connect your wallet before granting spending allowance.');
+      }
+
       // Fetch backend session account
       const sessionRes = await fetch('/api/session-account').then((r) => r.json());
       const sessionAccountAddress = sessionRes?.sessionAccountAddress;
@@ -257,10 +323,29 @@ export default function OnboardingPage() {
         throw new Error('Backend session account is currently unavailable.');
       }
 
-      const limitAmountUnits = (BigInt(Math.floor(numLimit)) * 1_000_000n).toString();
+      const limitAmountUnits = parseUnits(activeLimit, 6).toString();
       const periodSec = 86400; // 24-hour daily rolling period
       const totalValiditySec = parseInt(expiryDays, 10) * 86400;
       const validUntil = new Date(Date.now() + totalValiditySec * 1000).toISOString();
+
+      // Sign on-chain allowance approval for Session Relayer via MetaMask
+      const walletClient = await getBrowserWalletClient(connectedAddress);
+      const publicClient = getBrowserPublicClient();
+
+      const approvalTx = await walletClient.writeContract({
+        account: connectedAddress,
+        address: PAYMENT_TOKEN_ADDRESS as Address,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [sessionAccountAddress as Address, BigInt(limitAmountUnits)],
+      });
+
+      // Wait 1 confirmation
+      await publicClient.waitForTransactionReceipt({
+        hash: approvalTx,
+        confirmations: 1,
+        timeout: 60_000,
+      });
 
       const { data: authSession } = await supabase.auth.getSession();
       const token = authSession.session?.access_token;
@@ -272,7 +357,7 @@ export default function OnboardingPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          walletId,
+          walletId: effectiveWalletId,
           sessionAccountAddress,
           tokenAddress: PAYMENT_TOKEN_ADDRESS,
           periodSeconds: periodSec,
@@ -285,13 +370,14 @@ export default function OnboardingPage() {
             sessionAccountAddress,
             network: 'Sepolia',
             dailyCapUsdc: activeLimit,
+            approvalTxHash: approvalTx,
           },
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to save spending delegation');
+        throw new Error(data.error || 'Failed to save spending allowance');
       }
 
       setStep(5);
@@ -332,31 +418,58 @@ export default function OnboardingPage() {
 
       const cardHash = prepData.uidHash as `0x${string}`;
 
-      // 2. Sign registerCard in MetaMask
-      const walletClient = getBrowserWalletClient();
+      // 2. Check if already registered on-chain
+      let txHash: Hex | undefined;
+      const walletClient = await getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getCardRegistryAddress() as Address;
 
-      const txHash = await walletClient.writeContract({
-        address: registryAddress,
-        abi: CARD_REGISTRY_ABI,
-        functionName: 'registerCard',
-        args: [cardHash, connectedAddress],
-      });
+      try {
+        const onChainCard = (await publicClient.readContract({
+          address: registryAddress,
+          abi: CARD_REGISTRY_ABI,
+          functionName: 'cards',
+          args: [cardHash],
+        })) as [Address, number, bigint, bigint];
 
-      // 3. Wait for authoritative on-chain confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: txHash,
-        confirmations: 1,
-        timeout: 60_000,
-      });
+        const [ownerAddr] = onChainCard;
+        if (ownerAddr && ownerAddr.toLowerCase() === connectedAddress.toLowerCase()) {
+          console.log('[Onboarding] Card already registered on-chain to this owner, skipping registerCard tx.');
+        } else if (ownerAddr && ownerAddr !== '0x0000000000000000000000000000000000000000') {
+          throw new Error(`This NFC card is registered on-chain to another wallet (${ownerAddr}).`);
+        } else {
+          txHash = await walletClient.writeContract({
+            account: connectedAddress,
+            address: registryAddress,
+            abi: CARD_REGISTRY_ABI,
+            functionName: 'registerCard',
+            args: [cardHash, connectedAddress],
+          });
 
-      if (receipt.status !== 'success') {
-        throw new Error('On-chain card registration reverted on Sepolia.');
+          const receipt = await publicClient.waitForTransactionReceipt({
+            hash: txHash,
+            confirmations: 1,
+            timeout: 60_000,
+          });
+
+          if (receipt.status !== 'success') {
+            throw new Error('On-chain card registration reverted on Sepolia.');
+          }
+        }
+      } catch (checkErr: any) {
+        if (checkErr.message?.includes('registered on-chain to another')) throw checkErr;
+        txHash = await walletClient.writeContract({
+          account: connectedAddress,
+          address: registryAddress,
+          abi: CARD_REGISTRY_ABI,
+          functionName: 'registerCard',
+          args: [cardHash, connectedAddress],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
       }
 
       // 4. Save confirmed card to database
-      await fetch('/api/cards/register', {
+      const saveRes = await fetch('/api/cards/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -368,7 +481,14 @@ export default function OnboardingPage() {
         }),
       });
 
-      setRegisteredCardTx(txHash);
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) {
+        throw new Error(saveData.error || 'Failed to save card in database');
+      }
+
+      if (txHash) {
+        setRegisteredCardTx(txHash);
+      }
 
       // Onboarding complete! Redirect to user dashboard after a brief moment
       setTimeout(() => {
@@ -386,6 +506,11 @@ export default function OnboardingPage() {
   const handleMerchantSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session || !payoutAddress) return;
+
+    if (!connectedAddress) {
+      setWalletError('Please connect your settlement wallet before submitting merchant registration.');
+      return;
+    }
 
     if (!isAddress(payoutAddress.trim())) {
       setWalletError('Please enter a valid payout Ethereum address.');
@@ -406,7 +531,7 @@ export default function OnboardingPage() {
           payout_address: payoutAddress.trim().toLowerCase(),
           status: 'pending',
         },
-        { onConflict: 'id' }
+        { onConflict: 'owner_user_id' }
       );
 
       if (dbError) throw dbError;
@@ -457,9 +582,8 @@ export default function OnboardingPage() {
               setRole('payer');
               setStep(connectedAddress ? (upgradeStatus.status === 'upgraded' ? 4 : 3) : 2);
             }}
-            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${
-              role === 'payer' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
+            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${role === 'payer' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+              }`}
           >
             <User className="w-4 h-4" />
             <span>Customer (Payer)</span>
@@ -467,9 +591,8 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={() => setRole('merchant')}
-            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${
-              role === 'merchant' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
+            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${role === 'merchant' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+              }`}
           >
             <Store className="w-4 h-4" />
             <span>Retail Merchant</span>
@@ -482,13 +605,12 @@ export default function OnboardingPage() {
             {[1, 2, 3, 4, 5].map((s) => (
               <div key={s} className="flex items-center gap-1">
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                    s < step
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${s < step
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                       : s === step
-                      ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
-                      : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
-                  }`}
+                        ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
+                        : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
+                    }`}
                 >
                   {s < step ? '✓' : s}
                 </div>
@@ -555,20 +677,46 @@ export default function OnboardingPage() {
             </div>
 
             <div className="p-4 bg-[#071013] rounded-xl border border-[#1A2E38] space-y-2 text-xs font-mono">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-[#AAAAAA]">Account:</span>
-                <span className="text-white select-all">{truncateAddress(connectedAddress)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-white select-all">{truncateAddress(connectedAddress)}</span>
+                  <button
+                    type="button"
+                    onClick={handleSwitchWallet}
+                    className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                  >
+                    Change Wallet
+                  </button>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#AAAAAA]">Status:</span>
-                <Badge variant="warning">EOA (Upgrade Required)</Badge>
+              <div className="flex justify-between items-center">
+                <span className="text-[#AAAAAA]">Account Status:</span>
+                <Badge variant={upgradeStatus.status === 'upgraded' ? 'active' : 'warning'}>
+                  {upgradeStatus.status === 'upgraded' ? 'MetaMask Smart Account' : upgradeStatus.isForeignDelegation ? 'Delegated (Foreign)' : 'EOA'}
+                </Badge>
               </div>
+              {upgradeStatus.warning && (
+                <div className="text-[11px] text-amber-400 pt-1 border-t border-[#1A2E38]/50">
+                  {upgradeStatus.warning}
+                </div>
+              )}
             </div>
 
             {upgradeError && (
-              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2 font-mono">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{upgradeError}</span>
+              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-col gap-2 font-mono">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                  <span>{upgradeError}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStep(4)}
+                  className="w-full mt-1 font-mono text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
+                >
+                  Continue with Standard Wallet &rarr;
+                </Button>
               </div>
             )}
 
@@ -591,7 +739,7 @@ export default function OnboardingPage() {
                 )}
               </Button>
 
-              <div className="text-center">
+              <div className="flex items-center justify-between pt-1 px-1">
                 <button
                   type="button"
                   onClick={handleRecheckUpgrade}
@@ -599,7 +747,15 @@ export default function OnboardingPage() {
                   className="text-xs font-mono text-indigo-400 hover:underline inline-flex items-center gap-1"
                 >
                   <RefreshCw className={`w-3 h-3 ${isCheckingUpgrade ? 'animate-spin' : ''}`} />
-                  Check Upgrade Status Again
+                  Check Upgrade Status
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep(4)}
+                  className="text-xs font-mono text-emerald-400 hover:underline inline-flex items-center gap-1 font-bold"
+                >
+                  Skip & Continue &rarr;
                 </button>
               </div>
             </div>
@@ -614,16 +770,25 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* STEP 4: ERC-7715 PERMISSION */}
+        {/* STEP 4: DIRECT ON-CHAIN SPENDING ALLOWANCE */}
         {role === 'payer' && step === 4 && (
           <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
             <div className="space-y-1">
-              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                Step 4: Grant Spending Permission (ERC-7715)
-              </h2>
+              <div className="flex justify-between items-start">
+                <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  Step 4: Direct On-Chain Spending Allowance
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleSwitchWallet}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                >
+                  Change Wallet
+                </button>
+              </div>
               <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
-                Choose a maximum rolling limit that your physical NFC card can spend. You can revoke this anytime.
+                Approves a daily rolling spending allowance for the PaidX Session Relayer directly in on-chain Circle USDC. Funds remain non-custodial in your self-custody wallet until you tap at a counter terminal.
               </p>
             </div>
 
@@ -639,11 +804,10 @@ export default function OnboardingPage() {
                       setSpendingLimit(preset);
                       setIsCustomLimit(false);
                     }}
-                    className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${
-                      !isCustomLimit && spendingLimit === preset
+                    className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${!isCustomLimit && spendingLimit === preset
                         ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                         : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
-                    }`}
+                      }`}
                   >
                     ${preset}
                   </button>
@@ -683,11 +847,10 @@ export default function OnboardingPage() {
                     key={exp.val}
                     type="button"
                     onClick={() => setExpiryDays(exp.val)}
-                    className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${
-                      expiryDays === exp.val
+                    className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${expiryDays === exp.val
                         ? 'bg-indigo-600 text-white border-indigo-500'
                         : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
-                    }`}
+                      }`}
                   >
                     {exp.label}
                   </button>
@@ -725,11 +888,11 @@ export default function OnboardingPage() {
               {isSavingPermission ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Saving Permission...
+                  Sign Spending Allowance in MetaMask...
                 </>
               ) : (
                 <>
-                  <span>Grant Permission & Continue</span>
+                  <span>Sign Allowance & Continue</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -737,14 +900,23 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* STEP 5: REGISTER PHYSICAL NFC CARD */}
+        {/* STEP 5: ISSUE PHYSICAL NFC CARD */}
         {role === 'payer' && step === 5 && (
           <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
             <div className="space-y-1">
-              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-indigo-400" />
-                Step 5: Register Physical NFC Card On-Chain
-              </h2>
+              <div className="flex justify-between items-start">
+                <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-indigo-400" />
+                  Step 5: Issue Physical NFC Card On-Chain
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleSwitchWallet}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                >
+                  Change Wallet
+                </button>
+              </div>
               <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
                 Enter your physical NFC card UID. Your account will execute an on-chain registration on the Sepolia CardRegistry contract.
               </p>
@@ -753,7 +925,7 @@ export default function OnboardingPage() {
             {registeredCardTx ? (
               <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-2 font-mono">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <h3 className="text-sm font-bold text-white">Card Successfully Registered On-Chain!</h3>
+                <h3 className="text-sm font-bold text-white">Card Successfully Issued & Registered On-Chain!</h3>
                 <a
                   href={getExplorerTxUrl(registeredCardTx)}
                   target="_blank"

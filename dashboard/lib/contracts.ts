@@ -201,6 +201,27 @@ export const ERC20_ABI = [
   },
   {
     type: "function",
+    name: "transferFrom",
+    inputs: [
+      { name: "from", type: "address", internalType: "address" },
+      { name: "to", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" }
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "nonpayable"
+  },
+  {
+    type: "function",
+    name: "approve",
+    inputs: [
+      { name: "spender", type: "address", internalType: "address" },
+      { name: "amount", type: "uint256", internalType: "uint256" }
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "nonpayable"
+  },
+  {
+    type: "function",
     name: "allowance",
     inputs: [
       { name: "owner", type: "address", internalType: "address" },
@@ -222,11 +243,11 @@ export const ERC20_ABI = [
 ] as const;
 
 export function getCardRegistryAddress(): string {
-  return process.env.NEXT_PUBLIC_CARD_REGISTRY_ADDRESS || '';
+  return process.env.NEXT_PUBLIC_CARD_REGISTRY_ADDRESS || '0x7cBD8DE77C16Ba79A1fe10E30913517845D68e51';
 }
 
 export function getMerchantRegistryAddress(): string {
-  return process.env.NEXT_PUBLIC_MERCHANT_REGISTRY_ADDRESS || '';
+  return process.env.NEXT_PUBLIC_MERCHANT_REGISTRY_ADDRESS || '0xb11dAE79F1B187E95CB93655A983D6e86E574145';
 }
 
 export function getPaymentTokenAddress(): string {

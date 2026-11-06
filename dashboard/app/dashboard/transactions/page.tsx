@@ -28,7 +28,8 @@ interface PaymentRecord {
   created_at: string;
   merchant_id: string;
   merchants?: {
-    business_name: string;
+    name?: string;
+    business_name?: string;
     payout_address: string;
   } | null;
 }
@@ -38,42 +39,46 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const supabase = createBrowserSupabaseClient();
 
-  useEffect(() => {
-    async function loadPayments() {
-      setIsLoading(true);
-      try {
-        const session = await getRealUserSession();
-        if (!session) return;
+  const loadPayments = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const session = await getRealUserSession();
+      if (!session) return;
 
-        // Fetch payments for this user joined with merchants
-        const { data, error } = await supabase
-          .from('payments')
-          .select('*, merchants(business_name, payout_address)')
-          .eq('user_id', session.id)
-          .order('created_at', { ascending: false });
+      // Fetch payments for this user joined with merchants
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*, merchants(name, payout_address)')
+        .eq('user_id', session.id)
+        .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        if (data) {
-          setPayments(data as unknown as PaymentRecord[]);
-        }
-      } catch (err) {
-        console.warn('[Transactions] Fetch error:', err);
-      } finally {
-        setIsLoading(false);
+      if (error) throw error;
+      if (data) {
+        setPayments(data as unknown as PaymentRecord[]);
       }
+    } catch (err: unknown) {
+      console.warn('[Transactions] Fetch error:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to load transaction history';
+      setLoadError(msg);
+    } finally {
+      setIsLoading(false);
     }
+  };
 
+  useEffect(() => {
     loadPayments();
-  }, [supabase]);
+  }, []);
 
   const filtered = payments.filter((tx) => {
     if (filter !== 'all' && tx.status !== filter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      const name = tx.merchants?.business_name?.toLowerCase() || '';
+      const name = (tx.merchants?.name || tx.merchants?.business_name || '').toLowerCase();
       const hash = tx.tx_hash?.toLowerCase() || '';
       if (!name.includes(q) && !hash.includes(q)) return false;
     }
@@ -163,7 +168,7 @@ export default function TransactionsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-bold text-[#DFE0E2]">
-                      {tx.merchants?.business_name || 'Retail Merchant'}
+                      {tx.merchants?.name || tx.merchants?.business_name || 'Retail Merchant'}
                     </p>
                     <Badge
                       variant={

@@ -4,6 +4,8 @@ node_modules/
 
 # Production & Build outputs
 dist/
+!mcp-server/dist/
+!mcp-server/dist/**
 build/
 out/
 cache/
@@ -67,6 +69,20 @@ Thumbs.db
 .neon
 paidx-audit-export*
 paidx-final-remediation-audit.zip
+
+# Local Databases & Supabase Local Runtime
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.dump
+dump.sql
+.anvil/
+anvil-state.json
+supabase/.temp/
+supabase/.branches/
+.supabase/
 
 # Media & Assets
 v1-images/

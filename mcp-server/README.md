@@ -7,29 +7,33 @@ Dedicated Model Context Protocol (MCP) server for the **PaidX Agentic Wallet**, 
 ## Architecture Overview
 
 ```
- USER (Conversational Chat)
-   |
-   | "Send 5 USDC to 0.0.123456"
-   v
- AI AGENT (Claude Desktop, Cursor, OpenAI Agents)
-   |
-   | MCP Protocol (Streamable HTTP / SSE)
-   v
- PAIDX MCP SERVER (mcp-server: port 3002)
-   |
-   v
- PAIDX PAYMENT ORCHESTRATOR (dashboard: port 3000 / api/mcp)
-   |
-   +---> Validates Agent Token & Spending Policy
-   +---> Atomic Budget Reservation
-   +---> Prepares x402 Payment Requirements (payTo: 0.0.123456)
-   +---> Signs TransferTransaction with Connected Wallet
-   +---> Facilitator Sponsoring feePayer Settle
-   +---> Publishes Audit Event to Hedera Consensus Service (HCS)
-   |
-   v
- HEDERA TESTNET SETTLEMENT
+External AI Client (Claude Desktop, Cursor, ChatGPT, MCP Inspector)
+    |
+    | Streamable HTTP (MCP Protocol 2024-11-05 / 2025-03-26)
+    v
+https://agents.paidx.cc/mcp (or local: http://localhost:3002/mcp)
+    |
+    v
+Standalone PaidX MCP Server (mcp-server: StreamableHTTPServerTransport)
+    |
+    | Authorized Internal Forwarding (Authorization: Bearer <agent-token>)
+    v
+https://paidx-backend.vercel.app/api/mcp (or local: http://localhost:3000/api/mcp)
+    |
+    +---> Validates Agent Token & Spending Policy (Supabase Postgres)
+    +---> Atomic Budget Reservation (reserve_agent_budget RPC)
+    +---> Prepares x402 Payment Requirements (payTo: recipient)
+    +---> Signs TransferTransaction with Connected Hedera Wallet
+    +---> Facilitator Sponsoring feePayer Settle
+    +---> Publishes Audit Event to Hedera Consensus Service (HCS)
+    |
+    v
+Hedera Testnet Settlement + Mirror Node Verification
 ```
+
+> **Important Architecture Boundary**:
+> External AI clients MUST connect to the standalone MCP server at `https://agents.paidx.cc/mcp`.
+> The internal backend API (`https://paidx-backend.vercel.app/api/mcp`) is private infrastructure and must never be exposed directly to AI clients.
 
 ---
 
@@ -61,29 +65,26 @@ Dedicated Model Context Protocol (MCP) server for the **PaidX Agentic Wallet**, 
 
 ---
 
-## Getting Started
+## Client Configuration Examples
 
-### 1. Environment Setup
-Copy the example environment configuration:
-```bash
-cp .env.example .env
+### Claude Desktop (`claude_desktop_config.json`)
+
+Configure Claude Desktop to use the remote production Streamable HTTP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "paidx": {
+      "url": "https://agents.paidx.cc/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PAIDX_AGENT_TOKEN"
+      }
+    }
+  }
+}
 ```
 
-Ensure your backend orchestrator is running on port 3000 (`http://localhost:3000/api/mcp`).
-
-### 2. Install & Start Server
-```bash
-npm install
-npm run dev
-```
-
-The MCP Server will listen on `http://localhost:3002/mcp` and `http://localhost:3002/sse`.
-
----
-
-## Configuring with Claude Desktop or Cursor
-
-Add to your `claude_desktop_config.json`:
+For local development:
 
 ```json
 {
@@ -98,4 +99,44 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-Mint your `YOUR_PAIDX_AGENT_TOKEN` in the **PaidX Console $\rightarrow$ Agent Wallet** section.
+### Cursor & MCP Inspector
+
+Connect using the official Streamable HTTP transport:
+
+* **Transport Type**: `Streamable HTTP` (or `SSE`)
+* **Endpoint URL**: `https://agents.paidx.cc/mcp`
+* **Custom Headers**:
+  * `Authorization`: `Bearer YOUR_PAIDX_AGENT_TOKEN`
+
+---
+
+## Environment Configuration
+
+### Local Environment (`mcp-server/.env`)
+```bash
+MCP_PORT=3002
+PAIDX_BACKEND_URL=http://localhost:3000/api/mcp
+HEDERA_NETWORK=testnet
+HEDERA_MIRROR_NODE_URL=https://testnet.mirrornode.hedera.com
+```
+
+### Production Environment (Render / Cloud Container)
+```bash
+NODE_ENV=production
+PORT=10000
+PAIDX_BACKEND_URL=https://paidx-backend.vercel.app/api/mcp
+HEDERA_NETWORK=testnet
+HEDERA_MIRROR_NODE_URL=https://testnet.mirrornode.hedera.com
+```
+
+- Binds to `0.0.0.0`.
+- Automatically respects `process.env.PORT` on Render.
+- Fallback to `MCP_PORT` (default: 3002).
+
+---
+
+## Public Endpoints
+
+* **MCP Streamable HTTP Endpoint**: `https://agents.paidx.cc/mcp`
+* **Health & Status Check**: `https://agents.paidx.cc/health`
+* **Legacy SSE Endpoint**: `https://agents.paidx.cc/sse`

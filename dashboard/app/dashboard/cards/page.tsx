@@ -52,7 +52,9 @@ export default function CardsAndLimitsPage() {
   const [activePermission, setActivePermission] = useState<PermissionRow | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
 
   // Modals
   const [showClaimModal, setShowClaimModal] = useState(false);
@@ -66,6 +68,7 @@ export default function CardsAndLimitsPage() {
 
   const loadData = async () => {
     setIsLoading(true);
+    setLoadError(null);
     setActionError(null);
     try {
       const s = await getRealUserSession();
@@ -73,16 +76,17 @@ export default function CardsAndLimitsPage() {
       if (!s) return;
 
       // 1. Fetch real cards
-      const { data: cardsData } = await supabase
+      const { data: cardsData, error: cardsError } = await supabase
         .from('cards')
         .select('*')
         .eq('user_id', s.id)
         .order('created_at', { ascending: false });
 
+      if (cardsError) throw cardsError;
       if (cardsData) setCards(cardsData as unknown as CardRow[]);
 
       // 2. Fetch active permission
-      const { data: permData } = await supabase
+      const { data: permData, error: permError } = await supabase
         .from('permissions')
         .select('*')
         .eq('user_id', s.id)
@@ -91,9 +95,11 @@ export default function CardsAndLimitsPage() {
         .limit(1)
         .maybeSingle();
 
+      if (permError) throw permError;
       setActivePermission((permData as unknown as PermissionRow) || null);
     } catch (err: unknown) {
       console.warn('[Cards] Load error:', err);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load card and limit data');
     } finally {
       setIsLoading(false);
     }
@@ -132,36 +138,54 @@ export default function CardsAndLimitsPage() {
 
       const cardHash = prepData.uidHash as `0x${string}`;
 
-      // 2. Prompt user to sign registerCard on-chain via MetaMask
+      // 2. Prompt user to sign registerCard on-chain via MetaMask if not already on-chain
       if (typeof window === 'undefined' || !window.ethereum) {
         throw new Error('MetaMask is required to sign on-chain card registration.');
       }
-
-      const walletClient = getBrowserWalletClient();
-      const publicClient = getBrowserPublicClient();
-      const registryAddress = getCardRegistryAddress() as Address;
 
       const userAddress = (session?.smartAccountAddress || session?.eoaAddress) as Address;
       if (!userAddress) {
         throw new Error('No wallet address linked to current account.');
       }
 
-      const txHash = await walletClient.writeContract({
+      const walletClient = await getBrowserWalletClient(userAddress);
+      const publicClient = getBrowserPublicClient();
+      const registryAddress = getCardRegistryAddress() as Address;
+
+      // Read on-chain card first to avoid redundant reverts or duplicate registrations
+      let txHash: Hash | undefined;
+      const onChainRecord = (await publicClient.readContract({
         address: registryAddress,
         abi: CARD_REGISTRY_ABI,
-        functionName: 'registerCard',
-        args: [cardHash, userAddress],
-      });
+        functionName: 'cards',
+        args: [cardHash],
+      })) as [Address, number, bigint, bigint];
 
-      // 3. Wait for authoritative on-chain confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: txHash,
-        confirmations: 1,
-        timeout: 60_000,
-      });
+      const zeroAddress = '0x0000000000000000000000000000000000000000';
+      if (onChainRecord && onChainRecord[0] && onChainRecord[0] !== zeroAddress) {
+        if (onChainRecord[0].toLowerCase() !== userAddress.toLowerCase()) {
+          throw new Error(`Card is already registered on-chain to ${onChainRecord[0]}`);
+        }
+        console.log('[Cards] Card already registered on-chain to current wallet, saving to DB...');
+      } else {
+        txHash = await walletClient.writeContract({
+          account: userAddress,
+          address: registryAddress,
+          abi: CARD_REGISTRY_ABI,
+          functionName: 'registerCard',
+          args: [cardHash, userAddress],
+        });
 
-      if (receipt.status !== 'success') {
-        throw new Error('Card registration transaction reverted on Sepolia.');
+        // 3. Wait for authoritative on-chain confirmation
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: txHash,
+          confirmations: 1,
+          timeout: 60_000,
+        });
+
+        if (receipt.status !== 'success') {
+          throw new Error('Card registration transaction reverted on Sepolia.');
+        }
       }
 
       // 4. Save confirmed card record to database
@@ -173,7 +197,7 @@ export default function CardsAndLimitsPage() {
         },
         body: JSON.stringify({
           rawUid: rawNfcUid.trim(),
-          registrationTxHash: txHash,
+          registrationTxHash: txHash || null,
         }),
       });
 
@@ -196,11 +220,41 @@ export default function CardsAndLimitsPage() {
   // Toggle Card Freeze / Active state
   const handleToggleFreeze = async (card: CardRow) => {
     setActionError(null);
+    setUpdatingCardId(card.id);
     const newStatus = card.status === 'active' ? 'frozen' : 'active';
+    const targetStatusNum = newStatus === 'frozen' ? 2 : 1; // CardStatus.Frozen = 2, Active = 1
 
     try {
       const { data: authSession } = await supabase.auth.getSession();
       const token = authSession.session?.access_token;
+
+      // If registered on-chain, update on-chain status via MetaMask first
+      if (card.registration_tx_hash && typeof window !== 'undefined' && window.ethereum) {
+        const userAddress = (session?.smartAccountAddress || session?.eoaAddress) as Address;
+        if (userAddress) {
+          const walletClient = await getBrowserWalletClient(userAddress);
+          const publicClient = getBrowserPublicClient();
+          const registryAddress = getCardRegistryAddress() as Address;
+
+          const txHash = await walletClient.writeContract({
+            account: userAddress,
+            address: registryAddress,
+            abi: CARD_REGISTRY_ABI,
+            functionName: 'setCardStatus',
+            args: [card.uid_hash as `0x${string}`, targetStatusNum],
+          });
+
+          const receipt = await publicClient.waitForTransactionReceipt({
+            hash: txHash,
+            confirmations: 1,
+            timeout: 60_000,
+          });
+
+          if (receipt.status !== 'success') {
+            throw new Error(`Failed to update card status on-chain (reverted)`);
+          }
+        }
+      }
 
       const res = await fetch('/api/cards/status', {
         method: 'POST',
@@ -220,6 +274,8 @@ export default function CardsAndLimitsPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error updating card status';
       setActionError(msg);
+    } finally {
+      setUpdatingCardId(null);
     }
   };
 
@@ -276,9 +332,21 @@ export default function CardsAndLimitsPage() {
           className="font-mono text-xs"
         >
           <Plus className="w-3.5 h-3.5 mr-1.5" />
-          <span>Link New NFC Card</span>
+          <span>Issue a Card</span>
         </Button>
       </div>
+
+      {loadError && (
+        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{loadError}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={loadData} className="font-mono text-xs shrink-0">
+            Retry
+          </Button>
+        </div>
+      )}
 
       {actionError && (
         <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono flex items-center gap-2">
@@ -305,7 +373,7 @@ export default function CardsAndLimitsPage() {
               onClick={() => setShowClaimModal(true)}
               className="font-mono text-xs"
             >
-              Link Your First Card
+              Issue Your First Card
             </Button>
           </Card>
         ) : (
@@ -338,9 +406,16 @@ export default function CardsAndLimitsPage() {
                     </div>
                   </div>
 
-                  <Badge variant={card.status === 'active' ? 'active' : 'frozen'}>
-                    {card.status.toUpperCase()}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    {!card.registration_tx_hash && (
+                      <Badge variant="warning" className="text-[10px]">
+                        Not on-chain (DB-only)
+                      </Badge>
+                    )}
+                    <Badge variant={card.status === 'active' ? 'active' : 'frozen'}>
+                      {card.status.toUpperCase()}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="p-3 bg-[#071013] rounded-lg border border-[#1A2E38] text-[11px] font-mono text-[#888888] space-y-1">
@@ -350,8 +425,8 @@ export default function CardsAndLimitsPage() {
                   </p>
                   <p>
                     <span className="text-[#AAAAAA]">On-chain Registry:</span>{' '}
-                    <span className="text-emerald-400">
-                      {card.registration_tx_hash ? 'Confirmed' : 'Active'}
+                    <span className={card.registration_tx_hash ? 'text-emerald-400' : 'text-amber-400'}>
+                      {card.registration_tx_hash ? 'Confirmed' : 'Not on-chain (DB-only)'}
                     </span>
                   </p>
                 </div>
@@ -360,6 +435,8 @@ export default function CardsAndLimitsPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={updatingCardId !== null}
+                    isLoading={updatingCardId === card.id}
                     onClick={() => handleToggleFreeze(card)}
                     className="font-mono text-xs"
                   >
@@ -451,16 +528,16 @@ export default function CardsAndLimitsPage() {
         )}
       </div>
 
-      {/* Link Card Modal */}
+      {/* Issue Card Modal */}
       <Modal
         isOpen={showClaimModal}
         onClose={() => setShowClaimModal(false)}
-        title="Link Physical NFC Card"
+        title="Issue Physical NFC Card"
       >
         <form onSubmit={handleRegisterCard} className="space-y-4">
           <p className="text-xs font-mono text-[#AAAAAA]">
-            Enter the NFC tag UID from your physical card. The raw UID is hashed server-side with
-            CARD_UID_SALT and never stored in plain text.
+            Enter the NFC tag UID from your physical card to issue and link it to your MetaMask wallet.
+            The raw UID is hashed server-side with CARD_UID_SALT and never stored in plain text.
           </p>
 
           <Input
@@ -487,7 +564,7 @@ export default function CardsAndLimitsPage() {
               size="sm"
               isLoading={isSubmittingCard}
             >
-              Register Card
+              Issue a Card
             </Button>
           </div>
         </form>
