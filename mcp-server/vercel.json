@@ -1,5 +1,13 @@
 {
   "version": 2,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "x-paidx-mcp-deploy", "value": "deploy-probe-v1" }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/health", "destination": "/api/health" },
     { "source": "/mcp", "destination": "/api/mcp" },
