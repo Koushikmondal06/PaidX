@@ -24,13 +24,13 @@
 #define PAIDX_MERCHANT_ID "#001"
 
 // Merchant receiving address base (0x + 40 hex); must equal merchants.receiving_address
-#define PAIDX_MERCHANT_ADDRESS "0xC8C1b0BE0b1DE52c0341129456964fa95100bB40"
+#define PAIDX_MERCHANT_ADDRESS "0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6"
 
-// Expected Chain ID: Base Sepolia Testnet (84532) for free on-chain testing
-#define PAIDX_EXPECTED_CHAIN_ID 84532UL
+// Expected Chain ID: Ethereum Sepolia Testnet (11155111)
+#define PAIDX_EXPECTED_CHAIN_ID 11155111UL
 
-// Backend API Base for local LAN testing against running console on port 3001
-#define PAIDX_API_BASE "http://10.244.176.233:3001/api/pos"
+// Backend API Base for Console
+#define PAIDX_API_BASE "https://console.paidx.cc/api"
 #define PAIDX_ALLOW_INSECURE 1
 
 

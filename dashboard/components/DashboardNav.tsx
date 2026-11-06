@@ -17,6 +17,9 @@ import {
   Store,
   User,
   ShieldCheck,
+  Bot,
+  Sparkles,
+  Wallet,
 } from 'lucide-react';
 
 export function DashboardNav({ session }: { session?: UserSession | null }) {
@@ -33,7 +36,9 @@ export function DashboardNav({ session }: { session?: UserSession | null }) {
 
   const userNavItems = [
     { label: 'Overview', href: '/dashboard', icon: LayoutDashboard },
+    { label: 'Wallet', href: '/dashboard/wallet', icon: Wallet },
     { label: 'Cards & Limits', href: '/dashboard/cards', icon: CreditCard },
+    { label: 'Agent Wallet', href: '/dashboard/agents', icon: Bot },
     { label: 'Transactions', href: '/dashboard/transactions', icon: DollarSign },
   ];
 

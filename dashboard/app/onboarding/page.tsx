@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { PaidXLogo } from '@/components/ui/PaidXLogo';
 import { Card } from '@/components/ui/Card';
@@ -8,10 +8,12 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
-import { getRealUserSession, saveSession, UserSession, UserRole } from '@/lib/auth';
-import { PAYMENT_TOKEN_ADDRESS, truncateAddress } from '@/lib/base';
-import { getBrowserPublicClient, CHAIN_ID } from '@/lib/chain';
-import type { Address } from 'viem';
+import { getRealUserSession, UserSession, UserRole } from '@/lib/auth';
+import { PAYMENT_TOKEN_ADDRESS, truncateAddress, getExplorerTxUrl } from '@/lib/base';
+import { getBrowserPublicClient, getBrowserWalletClient, CHAIN_ID } from '@/lib/chain';
+import { getUpgradeStatus, checkWalletCapabilities, triggerSmartAccountUpgrade, UpgradeStatusResult } from '@/lib/eip7702';
+import { getCardRegistryAddress, CARD_REGISTRY_ABI } from '@/lib/contracts';
+import { isAddress, type Address, type Hash } from 'viem';
 import {
   Wallet,
   CreditCard,
@@ -24,6 +26,10 @@ import {
   ShieldCheck,
   AlertCircle,
   RefreshCw,
+  ExternalLink,
+  Info,
+  Clock,
+  Radio,
 } from 'lucide-react';
 
 export default function OnboardingPage() {
@@ -31,581 +37,889 @@ export default function OnboardingPage() {
   const supabase = createBrowserSupabaseClient();
   const [session, setSession] = useState<UserSession | null>(null);
 
-  // Funnel steps: 1 = Wallet, 2 = Role & Profile
-  const [step, setStep] = useState<1 | 2>(1);
+  // Flow role selection
+  const [role, setRole] = useState<'payer' | 'merchant'>('payer');
 
-  // Step 1: Wallet state
-  const [walletChoice, setWalletChoice] = useState<'create' | 'link'>('create');
-  const [isWalletConnecting, setIsWalletConnecting] = useState(false);
-  const [connectedEoa, setConnectedEoa] = useState<string | null>(null);
-  const [smartAccountStatus, setSmartAccountStatus] = useState<'upgraded' | 'eoa' | 'unknown'>('unknown');
-  const [isCheckingBytecode, setIsCheckingBytecode] = useState(false);
-  const [networkWarning, setNetworkWarning] = useState<string | null>(null);
+  // Stepper state: 1 to 5
+  // Step 1: Account Created & Email Confirmed (Done)
+  // Step 2: Connect MetaMask (Sepolia)
+  // Step 3: Upgrade to Smart Account (EIP-7702)
+  // Step 4: ERC-7715 Permission Delegation
+  // Step 5: Card Registration (On-Chain)
+  const [step, setStep] = useState<number>(2);
+
+  // Step 2 state: Wallet connection
+  const [connectedAddress, setConnectedAddress] = useState<Address | null>(null);
+  const [walletId, setWalletId] = useState<string | null>(null);
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
 
-  // Step 2: Role & Profile state
-  const [selectedRole, setSelectedRole] = useState<UserRole>('payer');
-  const [fullName, setFullName] = useState('');
-  const [currencyPref, setCurrencyPref] = useState<'USDC' | 'ETH'>('USDC');
+  // Step 3 state: Smart account upgrade
+  const [upgradeStatus, setUpgradeStatus] = useState<UpgradeStatusResult>({ status: 'not_upgraded' });
+  const [isCheckingUpgrade, setIsCheckingUpgrade] = useState(false);
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
-  // Spending limit selection for payer (ERC-7715)
-  const [spendingLimit, setSpendingLimit] = useState('100'); // USDC
-  const [expiryDays, setExpiryDays] = useState('30'); // Days
+  // Step 4 state: ERC-7715 Permission
+  const [spendingLimit, setSpendingLimit] = useState<string>('25'); // USDC
+  const [customLimit, setCustomLimit] = useState<string>('');
+  const [isCustomLimit, setIsCustomLimit] = useState(false);
+  const [expiryDays, setExpiryDays] = useState<string>(
+    process.env.NEXT_PUBLIC_PERMISSION_DEFAULT_EXPIRY_DAYS || '30'
+  );
+  const [isSavingPermission, setIsSavingPermission] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
 
-  // Merchant specific inputs
+  // Step 5 state: Card Registration
+  const [cardUid, setCardUid] = useState('');
+  const [isRegisteringCard, setIsRegisteringCard] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+  const [registeredCardTx, setRegisteredCardTx] = useState<string | null>(null);
+
+  // Merchant Onboarding inputs
   const [businessName, setBusinessName] = useState('');
   const [merchantSlug, setMerchantSlug] = useState('');
-  const [receivingAddress, setReceivingAddress] = useState('');
+  const [payoutAddress, setPayoutAddress] = useState('');
+  const [isSubmittingMerchant, setIsSubmittingMerchant] = useState(false);
+  const [merchantSuccess, setMerchantSuccess] = useState(false);
 
-  const [isLoading, setIsLoading] = useState(false);
-
+  // Load user session
   useEffect(() => {
-    async function loadSession() {
+    async function init() {
       const s = await getRealUserSession();
       if (!s) {
         router.replace('/auth');
-      } else {
-        setSession(s);
-        setFullName(s.fullName || '');
-        if (s.smartAccountAddress || s.eoaAddress) {
-          setConnectedEoa(s.smartAccountAddress || s.eoaAddress || null);
-        }
+        return;
+      }
+      setSession(s);
+      if (s.eoaAddress && isAddress(s.eoaAddress)) {
+        setConnectedAddress(s.eoaAddress as Address);
       }
     }
-    loadSession();
+    init();
   }, [router]);
 
-  /**
-   * Resiliently inspects bytecode on Sepolia to verify if upgraded to smart account.
-   * Never crashes the page and never blocks the connection.
-   */
-  const checkBytecodeStatus = async (address: string): Promise<boolean | null> => {
-    setIsCheckingBytecode(true);
-    setNetworkWarning(null);
-
-    try {
-      const publicClient = getBrowserPublicClient();
-      const bytecode = await publicClient.getBytecode({
-        address: address as Address,
-      });
-
-      const isUpgraded = Boolean(bytecode && bytecode !== '0x');
-      setSmartAccountStatus(isUpgraded ? 'upgraded' : 'eoa');
-      return isUpgraded;
-    } catch (err: unknown) {
-      console.warn('[Smart Account Network Check Notice]:', err);
-      setSmartAccountStatus('unknown');
-      setNetworkWarning("Couldn't check your account on the network. Retry");
-      return null;
-    } finally {
-      setIsCheckingBytecode(false);
-    }
-  };
-
-  /**
-   * Switches connected MetaMask wallet to Sepolia (11155111) if not already on it.
-   */
+  // Ensure user is on Sepolia
   const ensureSepoliaChain = async () => {
-    // @ts-expect-error window.ethereum
-    if (!window.ethereum) return;
-
-    // @ts-expect-error window.ethereum
-    const currentChainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
-    const currentChainId = parseInt(currentChainIdHex, 16);
-
-    if (currentChainId !== CHAIN_ID) {
-      const sepoliaHex = `0x${CHAIN_ID.toString(16)}`;
-      try {
-        // @ts-expect-error window.ethereum
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: sepoliaHex }],
-        });
-      } catch (switchError: any) {
-        // 4902 indicates that the chain has not been added to MetaMask
-        if (switchError?.code === 4902 || switchError?.data?.originalError?.code === 4902) {
-          const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || '';
-          // @ts-expect-error window.ethereum
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [
-              {
-                chainId: sepoliaHex,
-                chainName: 'Ethereum Sepolia',
-                nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-                rpcUrls: rpcUrl ? [rpcUrl] : [],
-                blockExplorerUrls: ['https://sepolia.etherscan.io'],
-              },
-            ],
-          });
-        } else {
-          throw new Error(`Please switch MetaMask to Ethereum Sepolia (Chain ID: ${CHAIN_ID})`);
-        }
-      }
+    if (typeof window === 'undefined' || !window.ethereum) return;
+    const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
+    const currentId = parseInt(chainIdHex as string, 16);
+    if (currentId !== CHAIN_ID) {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
+      });
     }
   };
 
-  // Connect MetaMask EOA & Detect Smart Account Status
+  // Step 2: Connect MetaMask and save via Server verification route
   const handleConnectWallet = async () => {
+    setIsConnectingWallet(true);
     setWalletError(null);
-    setNetworkWarning(null);
-    setIsWalletConnecting(true);
 
     try {
-      // @ts-expect-error window.ethereum
       if (typeof window === 'undefined' || !window.ethereum) {
-        throw new Error('MetaMask is not installed. Please install the MetaMask browser extension to proceed.');
+        throw new Error('MetaMask is not installed. Please install MetaMask to proceed.');
       }
 
-      // @ts-expect-error window.ethereum
-      const accounts: string[] = await window.ethereum.request({
+      await ensureSepoliaChain();
+      const accounts = (await window.ethereum.request({
         method: 'eth_requestAccounts',
+      })) as string[];
+
+      if (!accounts || accounts.length === 0 || !isAddress(accounts[0])) {
+        throw new Error('No account selected in MetaMask.');
+      }
+
+      const address = accounts[0].toLowerCase() as Address;
+      setConnectedAddress(address);
+
+      // Save to server-verified route (/api/wallets/save)
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession.session?.access_token;
+
+      const res = await fetch('/api/wallets/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ address }),
       });
 
-      if (!accounts || accounts.length === 0) {
-        throw new Error('No accounts selected in MetaMask');
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save wallet on server');
       }
 
-      // Ensure user is on Ethereum Sepolia
-      await ensureSepoliaChain();
+      setWalletId(data.wallet?.id);
 
-      const eoa = accounts[0].toLowerCase();
-      setConnectedEoa(eoa);
+      // Check bytecode upgrade status
+      const statusRes = await getUpgradeStatus(address);
+      setUpgradeStatus(statusRes);
 
-      // Inspect bytecode resiliently (non-blocking)
-      const isUpgraded = await checkBytecodeStatus(eoa);
-
-      // Persist wallet record in Supabase
-      if (session) {
-        const { error: walletDbError } = await supabase.from('wallets').upsert(
-          {
-            user_id: session.id,
-            address: eoa,
-            chain_id: CHAIN_ID,
-            kind: isUpgraded ? 'metamask_smart_account' : 'eoa',
-            is_primary: true,
-            smart_account_upgraded: Boolean(isUpgraded),
-          },
-          { onConflict: 'chain_id, address' }
-        );
-
-        if (walletDbError) {
-          console.warn('[DB] Wallet upsert warning:', walletDbError.message);
-        }
+      if (role === 'merchant') {
+        setPayoutAddress(address);
+      } else {
+        setStep(statusRes.status === 'upgraded' ? 4 : 3);
       }
-
-      setStep(2);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Wallet connection failed';
+      const msg = err instanceof Error ? err.message : 'Wallet connection error';
       setWalletError(msg);
     } finally {
-      setIsWalletConnecting(false);
+      setIsConnectingWallet(false);
     }
   };
 
-  // Complete Profile & Role Configuration
-  const handleProfileSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session || !connectedEoa) return;
-
-    setIsLoading(true);
+  // Step 3: Trigger Smart Account Upgrade
+  const handleUpgradeAccount = async () => {
+    if (!connectedAddress) return;
+    setIsUpgrading(true);
+    setUpgradeError(null);
 
     try {
-      // 1. Update Profile display name & role
+      const res = await triggerSmartAccountUpgrade(connectedAddress, CHAIN_ID);
+      if (!res.success) {
+        throw new Error(res.error || 'Upgrade call rejected');
+      }
+
+      // Poll upgrade status with backoff
+      let confirmed = false;
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const statusRes = await getUpgradeStatus(connectedAddress);
+        if (statusRes.status === 'upgraded') {
+          setUpgradeStatus(statusRes);
+          confirmed = true;
+          break;
+        }
+      }
+
+      if (confirmed) {
+        // Sync with server route
+        const { data: authSession } = await supabase.auth.getSession();
+        const token = authSession.session?.access_token;
+        await fetch('/api/wallets/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ address: connectedAddress }),
+        });
+
+        setStep(4);
+      } else {
+        setUpgradeError('Upgrade transaction submitted. Please check again in a few seconds.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upgrade failed';
+      setUpgradeError(msg);
+    } finally {
+      setIsUpgrading(false);
+    }
+  };
+
+  const handleRecheckUpgrade = async () => {
+    if (!connectedAddress) return;
+    setIsCheckingUpgrade(true);
+    setUpgradeError(null);
+    try {
+      const statusRes = await getUpgradeStatus(connectedAddress);
+      setUpgradeStatus(statusRes);
+      if (statusRes.status === 'upgraded') {
+        setStep(4);
+      } else {
+        setUpgradeError('Account is not yet upgraded to official MetaMask Smart Account.');
+      }
+    } finally {
+      setIsCheckingUpgrade(false);
+    }
+  };
+
+  // Step 4: Grant ERC-7715 Permission
+  const handleGrantPermission = async () => {
+    if (!connectedAddress || !walletId) return;
+    setIsSavingPermission(true);
+    setPermissionError(null);
+
+    try {
+      const activeLimit = isCustomLimit ? customLimit : spendingLimit;
+      const numLimit = parseFloat(activeLimit);
+      if (isNaN(numLimit) || numLimit <= 0) {
+        throw new Error('Please enter a valid spending limit greater than 0.');
+      }
+
+      // Fetch backend session account
+      const sessionRes = await fetch('/api/session-account').then((r) => r.json());
+      const sessionAccountAddress = sessionRes?.sessionAccountAddress;
+      if (!sessionAccountAddress) {
+        throw new Error('Backend session account is currently unavailable.');
+      }
+
+      const limitAmountUnits = (BigInt(Math.floor(numLimit)) * 1_000_000n).toString();
+      const periodSec = 86400; // 24-hour daily rolling period
+      const totalValiditySec = parseInt(expiryDays, 10) * 86400;
+      const validUntil = new Date(Date.now() + totalValiditySec * 1000).toISOString();
+
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession.session?.access_token;
+
+      const res = await fetch('/api/permissions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          walletId,
+          sessionAccountAddress,
+          tokenAddress: PAYMENT_TOKEN_ADDRESS,
+          periodSeconds: periodSec,
+          limitAmount: limitAmountUnits,
+          validAfter: new Date().toISOString(),
+          validUntil,
+          grantPayload: {
+            type: 'erc20_periodic',
+            payerAddress: connectedAddress,
+            sessionAccountAddress,
+            network: 'Sepolia',
+            dailyCapUsdc: activeLimit,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save spending delegation');
+      }
+
+      setStep(5);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error granting permission';
+      setPermissionError(msg);
+    } finally {
+      setIsSavingPermission(false);
+    }
+  };
+
+  // Step 5: Register Card On-Chain via MetaMask
+  const handleRegisterCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardUid.trim() || !connectedAddress) return;
+
+    setIsRegisteringCard(true);
+    setCardError(null);
+
+    try {
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession.session?.access_token;
+
+      // 1. Obtain salted hash from server
+      const prepRes = await fetch('/api/cards/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ rawUid: cardUid.trim(), prepareOnly: true }),
+      });
+
+      const prepData = await prepRes.json();
+      if (!prepRes.ok || !prepData.uidHash) {
+        throw new Error(prepData.error || 'Failed to prepare card hash');
+      }
+
+      const cardHash = prepData.uidHash as `0x${string}`;
+
+      // 2. Sign registerCard in MetaMask
+      const walletClient = getBrowserWalletClient();
+      const publicClient = getBrowserPublicClient();
+      const registryAddress = getCardRegistryAddress() as Address;
+
+      const txHash = await walletClient.writeContract({
+        address: registryAddress,
+        abi: CARD_REGISTRY_ABI,
+        functionName: 'registerCard',
+        args: [cardHash, connectedAddress],
+      });
+
+      // 3. Wait for authoritative on-chain confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+        timeout: 60_000,
+      });
+
+      if (receipt.status !== 'success') {
+        throw new Error('On-chain card registration reverted on Sepolia.');
+      }
+
+      // 4. Save confirmed card to database
+      await fetch('/api/cards/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          rawUid: cardUid.trim(),
+          registrationTxHash: txHash,
+        }),
+      });
+
+      setRegisteredCardTx(txHash);
+
+      // Onboarding complete! Redirect to user dashboard after a brief moment
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 2500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Card registration failed';
+      setCardError(msg);
+    } finally {
+      setIsRegisteringCard(false);
+    }
+  };
+
+  // Merchant Profile Submit
+  const handleMerchantSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !payoutAddress) return;
+
+    if (!isAddress(payoutAddress.trim())) {
+      setWalletError('Please enter a valid payout Ethereum address.');
+      return;
+    }
+
+    setIsSubmittingMerchant(true);
+    setWalletError(null);
+
+    try {
+      const slug = (merchantSlug || businessName.toLowerCase().replace(/[^a-z0-9]/g, '-')).replace(/^-|-$/g, '');
+
+      const { error: dbError } = await supabase.from('merchants').upsert(
+        {
+          owner_user_id: session.id,
+          name: businessName.trim() || 'My Retail Store',
+          slug: slug || 'store',
+          payout_address: payoutAddress.trim().toLowerCase(),
+          status: 'pending',
+        },
+        { onConflict: 'id' }
+      );
+
+      if (dbError) throw dbError;
+
+      // Update profile role
       await supabase
         .from('profiles')
-        .update({
-          display_name: fullName || session.fullName,
-          role: selectedRole === 'merchant' ? 'merchant' : 'user',
-          updated_at: new Date().toISOString(),
-        })
+        .update({ role: 'merchant' })
         .eq('id', session.id);
 
-      // 2. If Merchant, register merchant in database
-      let merchantId = '';
-      if (selectedRole === 'merchant') {
-        const slug = (merchantSlug || businessName.toLowerCase().replace(/[^a-z0-9]/g, '-')).replace(/^-|-$/g, '');
-        const payout = (receivingAddress || connectedEoa).toLowerCase();
-
-        const { data: merchantData, error: merchantError } = await supabase
-          .from('merchants')
-          .upsert(
-            {
-              user_id: session.id,
-              business_name: businessName || 'My Store',
-              slug: slug || 'merchant',
-              payout_address: payout,
-              chain_id: CHAIN_ID,
-              is_active: true,
-            },
-            { onConflict: 'id' }
-          )
-          .select()
-          .single();
-
-        if (merchantError) {
-          console.warn('[DB] Merchant upsert warning:', merchantError.message);
-        }
-        if (merchantData) {
-          merchantId = merchantData.id;
-        }
-      }
-
-      // 3. If Payer, create initial ERC-7715 permission via server API
-      if (selectedRole === 'payer') {
-        try {
-          const { data: sessionInfo } = await fetch('/api/session-account').then((r) => r.json());
-          const sessionAccountAddress = sessionInfo?.sessionAccountAddress;
-
-          if (sessionAccountAddress) {
-            // Get wallet ID from DB
-            const { data: walletRecord } = await supabase
-              .from('wallets')
-              .select('id')
-              .eq('user_id', session.id)
-              .eq('address', connectedEoa)
-              .maybeSingle();
-
-            if (walletRecord) {
-              const { data: authSession } = await supabase.auth.getSession();
-              const token = authSession.session?.access_token;
-              const limitAmountUnits = (BigInt(spendingLimit || '100') * 1_000_000n).toString();
-              const periodSec = 86400 * parseInt(expiryDays || '30', 10);
-              const validUntil = new Date(Date.now() + periodSec * 1000).toISOString();
-
-              await fetch('/api/permissions', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                body: JSON.stringify({
-                  walletId: walletRecord.id,
-                  sessionAccountAddress,
-                  tokenAddress: PAYMENT_TOKEN_ADDRESS,
-                  periodSeconds: 86400, // 24-hour periodic rolling window
-                  limitAmount: limitAmountUnits,
-                  validAfter: new Date().toISOString(),
-                  validUntil,
-                  grantPayload: {
-                    type: 'erc20_periodic',
-                    payerAddress: connectedEoa,
-                    sessionAccountAddress,
-                    network: 'Sepolia',
-                  },
-                }),
-              });
-            }
-          }
-        } catch (permErr) {
-          console.warn('[Permission] Initial permission request note:', permErr);
-        }
-      }
-
-      // Sync and redirect
-      await getRealUserSession();
-
-      if (selectedRole === 'merchant') {
-        router.push('/merchant');
-      } else {
-        router.push('/dashboard');
-      }
+      setMerchantSuccess(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error completing onboarding';
+      const msg = err instanceof Error ? err.message : 'Error submitting merchant application';
       setWalletError(msg);
     } finally {
-      setIsLoading(false);
+      setIsSubmittingMerchant(false);
     }
   };
 
-  if (!session) return null;
+  // Expiration calculation for plain language summary
+  const targetExpiryDate = new Date(Date.now() + parseInt(expiryDays, 10) * 86400 * 1000).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
   return (
-    <div className="min-h-screen bg-[#071013] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      <div className="w-full max-w-xl space-y-6 relative z-10">
+    <div className="min-h-screen bg-[#071013] text-[#DFE0E2] flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-xl space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
           <div className="flex justify-center mb-2">
             <PaidXLogo size={36} />
           </div>
           <h1 className="text-xl font-bold font-mono text-[#DFE0E2]">
-            {step === 1 ? 'Step 1: Non-Custodial Wallet Setup' : 'Step 2: Profile & Role Configuration'}
+            {role === 'payer' ? 'User Onboarding: Non-Custodial Retail Setup' : 'Merchant Registration'}
           </h1>
           <p className="text-xs text-[#AAAAAA] font-mono">
-            {step === 1
-              ? 'Connect your wallet for Ethereum Sepolia settlement'
-              : 'Customize your PaidX experience based on how you participate'}
+            Contactless Tap Payments on Ethereum Sepolia Testnet
           </p>
         </div>
 
-        {/* Funnel Progress Indicator */}
-        <div className="flex items-center justify-center gap-3">
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono border ${
-              step === 1
-                ? 'bg-[#5465FF]/20 text-[#5465FF] border-[#5465FF]'
-                : 'bg-emerald-950/40 text-emerald-400 border-emerald-800'
+        {/* Role Switcher */}
+        <div className="grid grid-cols-2 gap-2 p-1 bg-[#0E1D24] rounded-xl border border-[#1A2E38]">
+          <button
+            type="button"
+            onClick={() => {
+              setRole('payer');
+              setStep(connectedAddress ? (upgradeStatus.status === 'upgraded' ? 4 : 3) : 2);
+            }}
+            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${
+              role === 'payer' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
             }`}
           >
-            <span className="w-4 h-4 rounded-full bg-current/20 flex items-center justify-center text-[10px]">
-              {step > 1 ? '✓' : '1'}
-            </span>
-            <span>Wallet</span>
-          </div>
-
-          <div className="w-8 h-[1px] bg-[#1A2E38]" />
-
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono border ${
-              step === 2
-                ? 'bg-[#5465FF]/20 text-[#5465FF] border-[#5465FF]'
-                : 'bg-[#0B161B] text-[#666666] border-[#1A2E38]'
+            <User className="w-4 h-4" />
+            <span>Customer (Payer)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole('merchant')}
+            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${
+              role === 'merchant' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
             }`}
           >
-            <span className="w-4 h-4 rounded-full bg-current/20 flex items-center justify-center text-[10px]">
-              2
-            </span>
-            <span>Role & Profile</span>
-          </div>
+            <Store className="w-4 h-4" />
+            <span>Retail Merchant</span>
+          </button>
         </div>
 
-        {/* STEP 1: WALLET SETUP */}
-        {step === 1 && (
-          <Card className="space-y-6 border-[#1A2E38]">
-            <div className="space-y-4">
-              {/* Option: Connect MetaMask */}
-              <div
-                onClick={() => setWalletChoice('create')}
-                className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                  walletChoice === 'create'
-                    ? 'bg-[#0E1D24] border-[#5465FF] shadow-sm shadow-[#5465FF]/20'
-                    : 'bg-[#071013] border-[#1A2E38] hover:border-[#1A2E38]/80'
-                }`}
-              >
+        {/* 5-Step Stepper for Payer */}
+        {role === 'payer' && (
+          <div className="flex items-center justify-between px-2 text-xs font-mono">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <div key={s} className="flex items-center gap-1">
                 <div
-                  className={`p-2 rounded-lg ${
-                    walletChoice === 'create'
-                      ? 'bg-[#5465FF] text-white'
-                      : 'bg-[#0B161B] text-[#AAAAAA]'
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                    s < step
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      : s === step
+                      ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
+                      : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
                   }`}
                 >
-                  <Sparkles className="w-5 h-5" />
+                  {s < step ? '✓' : s}
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-mono font-bold text-[#DFE0E2]">
-                      Connect MetaMask (Ethereum Sepolia)
-                    </h3>
-                    <Badge variant="info">ERC-7715 / ERC-7710</Badge>
-                  </div>
-                  <p className="text-[11px] font-mono text-[#AAAAAA] mt-1">
-                    Connect your MetaMask account. Automatically detects smart account upgrade status
-                    and configures non-custodial POS permissions.
-                  </p>
-                </div>
-              </div>
-
-              {/* Notice on Coinbase Wallet */}
-              <div className="p-3 rounded-lg bg-[#071013] border border-[#1A2E38] flex items-center gap-2 text-[11px] font-mono text-[#888888]">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>
-                  Coinbase Wallet is deferred due to delegation permissions constraints; MetaMask is the active supported provider.
+                <span className={`hidden sm:inline text-[10px] ${s === step ? 'text-white' : 'text-slate-500'}`}>
+                  {s === 1 ? 'Auth' : s === 2 ? 'Wallet' : s === 3 ? 'Upgrade' : s === 4 ? 'Limit' : 'Card'}
                 </span>
+                {s < 5 && <div className="w-4 sm:w-6 h-[1px] bg-[#1A2E38] mx-0.5" />}
               </div>
+            ))}
+          </div>
+        )}
 
-              {walletError && (
-                <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono">
-                  {walletError}
-                </div>
-              )}
+        {/* STEP 2: CONNECT WALLET */}
+        {role === 'payer' && step === 2 && (
+          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-[#5465FF]" />
+                Step 2: Connect MetaMask on Sepolia
+              </h2>
+              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+                Connect your self-custody MetaMask wallet. PaidX never holds your private keys; payments settle directly from your account.
+              </p>
             </div>
 
+            {walletError && (
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{walletError}</span>
+              </div>
+            )}
+
             <Button
-              type="button"
-              variant="primary"
-              size="lg"
-              className="w-full font-mono text-xs"
               onClick={handleConnectWallet}
-              isLoading={isWalletConnecting}
+              disabled={isConnectingWallet}
+              className="w-full h-11 bg-[#5465FF] hover:bg-[#4353ea] text-white font-mono text-xs flex items-center justify-center gap-2"
             >
-              <span>Connect MetaMask & Verify</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+              {isConnectingWallet ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Connecting MetaMask...
+                </>
+              ) : (
+                <>
+                  <Wallet className="w-4 h-4" />
+                  Connect MetaMask (Ethereum Sepolia)
+                </>
+              )}
             </Button>
           </Card>
         )}
 
-        {/* STEP 2: ROLE & PROFILE SELECTION */}
-        {step === 2 && (
-          <Card className="space-y-6 border-[#1A2E38]">
-            {/* Account Status Badge */}
-            <div className="p-3 rounded-lg bg-[#0E1D24] border border-[#1A2E38] flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-mono text-[#888888]">Connected Wallet (Sepolia)</p>
-                <p className="text-xs font-mono text-[#5465FF] font-bold">
-                  {truncateAddress(connectedEoa)}
-                </p>
+        {/* STEP 3: EIP-7702 UPGRADE */}
+        {role === 'payer' && step === 3 && (
+          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-400" />
+                Step 3: Upgrade to MetaMask Smart Account (EIP-7702)
+              </h2>
+              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+                PaidX uses official MetaMask Smart Accounts to enable scoped execution permissions for physical NFC card taps.
+              </p>
+            </div>
+
+            <div className="p-4 bg-[#071013] rounded-xl border border-[#1A2E38] space-y-2 text-xs font-mono">
+              <div className="flex justify-between">
+                <span className="text-[#AAAAAA]">Account:</span>
+                <span className="text-white select-all">{truncateAddress(connectedAddress)}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={
-                    smartAccountStatus === 'upgraded'
-                      ? 'active'
-                      : smartAccountStatus === 'eoa'
-                      ? 'default'
-                      : 'warning'
-                  }
-                >
-                  {smartAccountStatus === 'upgraded'
-                    ? 'Smart Account Deployed'
-                    : smartAccountStatus === 'eoa'
-                    ? 'Standard EOA'
-                    : 'Status Unknown'}
-                </Badge>
+              <div className="flex justify-between">
+                <span className="text-[#AAAAAA]">Status:</span>
+                <Badge variant="warning">EOA (Upgrade Required)</Badge>
               </div>
             </div>
 
-            {/* Non-blocking network check warning banner with retry */}
-            {networkWarning && connectedEoa && (
-              <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-900/60 flex items-center justify-between text-xs font-mono text-amber-300">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{networkWarning}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => checkBytecodeStatus(connectedEoa)}
-                  disabled={isCheckingBytecode}
-                  className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-900 text-amber-200 inline-flex items-center gap-1 text-[11px] font-mono"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isCheckingBytecode ? 'animate-spin' : ''}`} />
-                  <span>Retry</span>
-                </button>
+            {upgradeError && (
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2 font-mono">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{upgradeError}</span>
               </div>
             )}
 
-            <form onSubmit={handleProfileSubmit} className="space-y-5">
-              {/* Role Cards */}
-              <div className="space-y-2">
-                <label className="block text-xs font-mono font-medium text-[#DFE0E2]">
-                  Select Account Type
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Payer */}
-                  <div
-                    onClick={() => setSelectedRole('payer')}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                      selectedRole === 'payer'
-                        ? 'bg-[#0E1D24] border-[#5465FF] shadow-sm shadow-[#5465FF]/20'
-                        : 'bg-[#071013] border-[#1A2E38] hover:border-[#1A2E38]/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <CreditCard className="w-4 h-4 text-[#5465FF]" />
-                      <span className="text-xs font-mono font-bold text-[#DFE0E2]">Payer</span>
-                    </div>
-                    <p className="text-[11px] font-mono text-[#AAAAAA]">
-                      Tap physical NFC card to pay at stores with spending limits.
-                    </p>
-                  </div>
+            <div className="space-y-3">
+              <Button
+                onClick={handleUpgradeAccount}
+                disabled={isUpgrading}
+                className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+              >
+                {isUpgrading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Waiting for Upgrade Confirmation...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Upgrade to Smart Account
+                  </>
+                )}
+              </Button>
 
-                  {/* Merchant */}
-                  <div
-                    onClick={() => setSelectedRole('merchant')}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                      selectedRole === 'merchant'
-                        ? 'bg-[#0E1D24] border-[#5465FF] shadow-sm shadow-[#5465FF]/20'
-                        : 'bg-[#071013] border-[#1A2E38] hover:border-[#1A2E38]/80'
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleRecheckUpgrade}
+                  disabled={isCheckingUpgrade}
+                  className="text-xs font-mono text-indigo-400 hover:underline inline-flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isCheckingUpgrade ? 'animate-spin' : ''}`} />
+                  Check Upgrade Status Again
+                </button>
+              </div>
+            </div>
+
+            {/* Manual Fallback Explanation */}
+            <div className="p-3 bg-[#0B161B] rounded-lg border border-[#1A2E38] text-[11px] font-mono text-[#888888] space-y-1">
+              <p className="text-slate-300 font-bold">Manual Upgrade Steps:</p>
+              <p>1. Open MetaMask &rarr; Account Selector &rarr; Settings.</p>
+              <p>2. Toggle on "Enable Smart Account features".</p>
+              <p>3. Click "Check Upgrade Status Again" above.</p>
+            </div>
+          </Card>
+        )}
+
+        {/* STEP 4: ERC-7715 PERMISSION */}
+        {role === 'payer' && step === 4 && (
+          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                Step 4: Grant Spending Permission (ERC-7715)
+              </h2>
+              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+                Choose a maximum rolling limit that your physical NFC card can spend. You can revoke this anytime.
+              </p>
+            </div>
+
+            {/* Presets + Custom Limit */}
+            <div className="space-y-2">
+              <label className="block text-xs font-mono text-slate-300">Daily Spending Limit (USDC)</label>
+              <div className="grid grid-cols-4 gap-2">
+                {['10', '25', '50', '100'].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      setSpendingLimit(preset);
+                      setIsCustomLimit(false);
+                    }}
+                    className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${
+                      !isCustomLimit && spendingLimit === preset
+                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                        : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
                     }`}
                   >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Store className="w-4 h-4 text-[#5465FF]" />
-                      <span className="text-xs font-mono font-bold text-[#DFE0E2]">Merchant</span>
-                    </div>
-                    <p className="text-[11px] font-mono text-[#AAAAAA]">
-                      Accept contactless crypto payments on phone POS & manage terminals.
-                    </p>
-                  </div>
-                </div>
+                    ${preset}
+                  </button>
+                ))}
               </div>
 
-              {/* Common Fields */}
-              <Input
-                label="Full Name or Handle"
-                placeholder="e.g. Satoshi Nakamoto"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
-
-              {/* Payer Specific Settings */}
-              {selectedRole === 'payer' && (
-                <div className="space-y-3 p-3.5 rounded-xl bg-[#071013] border border-[#1A2E38]">
-                  <h4 className="text-xs font-mono font-bold text-[#DFE0E2] flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-[#5465FF]" />
-                    <span>ERC-7715 Periodic Spending Limit</span>
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Input
-                      label="Limit (USDC)"
-                      type="number"
-                      min="1"
-                      value={spendingLimit}
-                      onChange={(e) => setSpendingLimit(e.target.value)}
-                      helperText="Spending cap per 24 hours"
-                    />
-                    <Input
-                      label="Validity (Days)"
-                      type="number"
-                      min="1"
-                      value={expiryDays}
-                      onChange={(e) => setExpiryDays(e.target.value)}
-                      helperText="Permission duration"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Merchant Specific Fields */}
-              {selectedRole === 'merchant' && (
-                <div className="space-y-3 p-3.5 rounded-xl bg-[#071013] border border-[#1A2E38]">
-                  <h4 className="text-xs font-mono font-bold text-[#DFE0E2]">
-                    Merchant Business Profile
-                  </h4>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomLimit(!isCustomLimit)}
+                  className="text-xs font-mono text-indigo-400 hover:underline"
+                >
+                  {isCustomLimit ? 'Choose from presets' : 'Enter custom limit'}
+                </button>
+                {isCustomLimit && (
                   <Input
-                    label="Business Name"
-                    placeholder="e.g. Apex Artisan Coffee"
+                    type="number"
+                    placeholder="e.g. 75"
+                    value={customLimit}
+                    onChange={(e) => setCustomLimit(e.target.value)}
+                    className="mt-2 bg-[#071013] border-[#1A2E38] text-white"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Expiry Presets */}
+            <div className="space-y-2">
+              <label className="block text-xs font-mono text-slate-300">Permission Expiry</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: '7 Days', val: '7' },
+                  { label: '30 Days', val: '30' },
+                  { label: '90 Days', val: '90' },
+                ].map((exp) => (
+                  <button
+                    key={exp.val}
+                    type="button"
+                    onClick={() => setExpiryDays(exp.val)}
+                    className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${
+                      expiryDays === exp.val
+                        ? 'bg-indigo-600 text-white border-indigo-500'
+                        : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
+                    }`}
+                  >
+                    {exp.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Plain Language Summary */}
+            <div className="p-4 bg-[#071013] rounded-xl border border-indigo-500/30 text-xs font-mono text-indigo-300 space-y-1">
+              <p className="font-bold text-white flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-indigo-400" />
+                Plain-Language Permission Summary:
+              </p>
+              <p className="text-slate-300">
+                PaidX can spend up to{' '}
+                <strong className="text-emerald-400">${isCustomLimit ? customLimit || '0' : spendingLimit} USDC</strong>{' '}
+                per day until <strong className="text-white">{targetExpiryDate}</strong>.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                You can revoke or adjust this permission anytime from your dashboard.
+              </p>
+            </div>
+
+            {permissionError && (
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                {permissionError}
+              </div>
+            )}
+
+            <Button
+              onClick={handleGrantPermission}
+              disabled={isSavingPermission}
+              className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+            >
+              {isSavingPermission ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Saving Permission...
+                </>
+              ) : (
+                <>
+                  <span>Grant Permission & Continue</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </Button>
+          </Card>
+        )}
+
+        {/* STEP 5: REGISTER PHYSICAL NFC CARD */}
+        {role === 'payer' && step === 5 && (
+          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-indigo-400" />
+                Step 5: Register Physical NFC Card On-Chain
+              </h2>
+              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+                Enter your physical NFC card UID. Your account will execute an on-chain registration on the Sepolia CardRegistry contract.
+              </p>
+            </div>
+
+            {registeredCardTx ? (
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-2 font-mono">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                <h3 className="text-sm font-bold text-white">Card Successfully Registered On-Chain!</h3>
+                <a
+                  href={getExplorerTxUrl(registeredCardTx)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-indigo-400 hover:underline flex items-center justify-center gap-1"
+                >
+                  View Receipt on Sepolia Etherscan <ExternalLink className="w-3 h-3" />
+                </a>
+                <p className="text-xs text-slate-400 pt-2">Redirecting to your dashboard...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleRegisterCard} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1.5">
+                    Physical NFC Card UID
+                  </label>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="e.g. 04:A2:B3:C4:D5:E6:F7"
+                    value={cardUid}
+                    onChange={(e) => setCardUid(e.target.value)}
+                    className="bg-[#071013] border-[#1A2E38] font-mono text-xs text-white"
+                  />
+                  <p className="text-[11px] text-slate-500 font-mono mt-1">
+                    Raw UID is salted with CARD_UID_SALT and never stored in plain text.
+                  </p>
+                </div>
+
+                {cardError && (
+                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                    {cardError}
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={isRegisteringCard || !cardUid.trim()}
+                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+                >
+                  {isRegisteringCard ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Sign Transaction in MetaMask...
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-4 h-4" />
+                      Sign On-Chain Registration (Sepolia ETH)
+                    </>
+                  )}
+                </Button>
+              </form>
+            )}
+          </Card>
+        )}
+
+        {/* MERCHANT ONBOARDING */}
+        {role === 'merchant' && (
+          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                <Store className="w-5 h-5 text-indigo-400" />
+                Merchant Application & Settlement Configuration
+              </h2>
+              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+                Register your retail store on Ethereum Sepolia. In accordance with protocol governance, merchant registrations must be approved on-chain by the protocol administrator.
+              </p>
+            </div>
+
+            {merchantSuccess ? (
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-3 font-mono">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                <h3 className="text-sm font-bold text-white">Application Submitted! Status: Pending</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Your store payout address is registered. Once approved on-chain by the protocol admin on the Sepolia MerchantRegistry, your store will become active.
+                </p>
+                <Button
+                  onClick={() => router.push('/merchant')}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs"
+                >
+                  Go to Merchant Dashboard
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleMerchantSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1.5">
+                    Business / Store Name
+                  </label>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="e.g. Apex Coffee & Bakery"
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
-                    required
+                    className="bg-[#071013] border-[#1A2E38] text-white text-xs"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-mono text-slate-300 mb-1.5">
+                    Store URL Identifier (Slug)
+                  </label>
                   <Input
-                    label="Store URL Slug"
+                    type="text"
                     placeholder="e.g. apex-coffee"
                     value={merchantSlug}
                     onChange={(e) => setMerchantSlug(e.target.value)}
-                    helperText="Unique identifier for POS terminals"
-                  />
-                  <Input
-                    label="USDC Receiving Address"
-                    placeholder="0x..."
-                    value={receivingAddress || connectedEoa || ''}
-                    onChange={(e) => setReceivingAddress(e.target.value)}
-                    helperText="Sepolia address where retail payments settle"
+                    className="bg-[#071013] border-[#1A2E38] font-mono text-xs text-white"
                   />
                 </div>
-              )}
 
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                className="w-full font-mono text-xs"
-                isLoading={isLoading}
-              >
-                <span>Save Profile & Launch Console</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </Button>
-            </form>
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-mono text-slate-300">
+                      Settlement Payout Address
+                    </label>
+                    {connectedAddress && (
+                      <button
+                        type="button"
+                        onClick={() => setPayoutAddress(connectedAddress)}
+                        className="text-xs font-mono text-indigo-400 hover:underline"
+                      >
+                        Use Connected Wallet
+                      </button>
+                    )}
+                  </div>
+                  <Input
+                    type="text"
+                    required
+                    placeholder="0x..."
+                    value={payoutAddress}
+                    onChange={(e) => setPayoutAddress(e.target.value)}
+                    className="bg-[#071013] border-[#1A2E38] font-mono text-xs text-white"
+                  />
+                  <p className="text-[11px] text-slate-500 font-mono mt-1">
+                    All retail USDC customer payments will settle directly to this address.
+                  </p>
+                </div>
+
+                {walletError && (
+                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                    {walletError}
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={isSubmittingMerchant}
+                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+                >
+                  {isSubmittingMerchant ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Submitting Application...
+                    </>
+                  ) : (
+                    <>
+                      <Store className="w-4 h-4" />
+                      Submit Merchant Application
+                    </>
+                  )}
+                </Button>
+              </form>
+            )}
           </Card>
         )}
       </div>

@@ -12,6 +12,13 @@ export const CARD_REGISTRY_ABI = [
   },
   {
     type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view"
+  },
+  {
+    type: "function",
     name: "cards",
     inputs: [{ name: "", type: "bytes32", internalType: "bytes32" }],
     outputs: [
@@ -87,6 +94,13 @@ export const MERCHANT_REGISTRY_ABI = [
     type: "constructor",
     inputs: [{ name: "initialOwner", type: "address", internalType: "address" }],
     stateMutability: "nonpayable"
+  },
+  {
+    type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view"
   },
   {
     type: "function",

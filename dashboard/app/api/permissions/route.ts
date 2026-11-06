@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CHAIN_ID, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
+import { getServerPublicClient } from '@/lib/chain';
+import { getOfficial7702DeleGatorAddress } from '@/lib/eip7702';
+import type { Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +50,7 @@ export async function POST(req: NextRequest) {
     // Verify wallet ownership
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
-      .select('id, user_id, chain_id')
+      .select('id, user_id, chain_id, address')
       .eq('id', walletId)
       .eq('user_id', user.id)
       .single();
@@ -57,6 +60,26 @@ export async function POST(req: NextRequest) {
         { error: 'Wallet not found or not owned by user' },
         { status: 403 }
       );
+    }
+
+    // Authoritative server-side verification of smart account upgrade status
+    try {
+      if (wallet.address) {
+        const publicClient = getServerPublicClient();
+        const code = await publicClient.getCode({ address: wallet.address as Address });
+        if (code && code.toLowerCase().startsWith('0xef0100') && code.length >= 48) {
+          const delegate = `0x${code.substring(8, 48)}`.toLowerCase();
+          const official = getOfficial7702DeleGatorAddress(CHAIN_ID).toLowerCase();
+          if (delegate === official) {
+            await supabase
+              .from('wallets')
+              .update({ smart_account_upgraded: true, kind: 'metamask_smart_account' })
+              .eq('id', wallet.id);
+          }
+        }
+      }
+    } catch (checkErr) {
+      console.warn('[Permissions] Server upgrade verification notice:', checkErr);
     }
 
     // Insert active permission record
