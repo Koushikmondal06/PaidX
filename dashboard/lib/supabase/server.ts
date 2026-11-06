@@ -58,6 +58,24 @@ export function createServerSupabaseClient() {
 
   // Custom fetch to enforce correct headers based on key type
   const customFetch: typeof fetch = (input, init = {}) => {
+    const urlStr =
+      typeof input === 'string'
+        ? input
+        : typeof (input as any)?.url === 'string'
+          ? (input as any).url
+          : typeof (input as any)?.href === 'string'
+            ? (input as any).href
+            : String(input || '');
+
+    if (urlStr.includes('placeholder.supabase.co')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ message: 'Placeholder Supabase URL is not configured.', hint: '', code: 'PGRST_PLACEHOLDER' }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+    }
+
     const headers = new Headers(init.headers);
     headers.set('apikey', secretKey);
 

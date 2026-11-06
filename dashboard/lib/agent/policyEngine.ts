@@ -274,3 +274,100 @@ export async function releaseFailedReservation(
 
   return { success: true };
 }
+
+export interface AgentSpendingLimitsSummary {
+  spendingLimitDenomination: 'USD_MICRO';
+  perTransactionLimitUsdMicro: string;
+  dailyBudgetUsdMicro: string;
+  dailySpentUsdMicro: string;
+  dailyReservedUsdMicro: string;
+  remainingDailyBudgetUsdMicro: string;
+  monthlyBudgetUsdMicro: string;
+  monthlySpentUsdMicro: string;
+  remainingMonthlyBudgetUsdMicro: string;
+  autonomousPaymentsEnabled: boolean;
+  requireApprovalAboveUsdMicro: string | null;
+  allowedNetworks: string[] | null;
+  allowedAssets: string[] | null;
+  allowedRecipients: string[] | null;
+  periodStartDate: string | null;
+}
+
+/**
+ * Authoritatively queries agent spending limits, daily/monthly budgets, and reserves
+ * from the database in uniform USD-micro denomination ($10^-6 USD).
+ */
+export async function getAgentSpendingLimitsSummary(
+  agentId: string
+): Promise<AgentSpendingLimitsSummary | null> {
+  const supabase = createServerSupabaseClient();
+  const { data: policy, error: policyError } = await supabase
+    .from('agent_policies')
+    .select('*')
+    .eq('agent_id', agentId)
+    .maybeSingle();
+
+  if (policyError || !policy) {
+    return null;
+  }
+
+  // Rollover calculations
+  const todayStr = new Date().toISOString().split('T')[0];
+  const policyDateStr = policy.period_start_date
+    ? new Date(policy.period_start_date).toISOString().split('T')[0]
+    : todayStr;
+  const isRolloverToday = policyDateStr < todayStr;
+  const dailySpentBig = isRolloverToday ? 0n : BigInt(policy.spent_today || '0');
+
+  const currentMonthStr = todayStr.substring(0, 7);
+  const policyMonthStr = policyDateStr.substring(0, 7);
+  const isRolloverMonth = policyMonthStr < currentMonthStr;
+  const monthlySpentBig = isRolloverMonth ? 0n : BigInt(policy.spent_this_month || '0');
+
+  // Active unexpired reservations in USD-micro
+  let dailyReservedBig = 0n;
+  try {
+    const { data: resvs } = await supabase
+      .from('agent_spending_reservations')
+      .select('amount_usd_micro, amount, expires_at')
+      .eq('agent_id', agentId)
+      .eq('status', 'reserved');
+
+    if (resvs && Array.isArray(resvs)) {
+      const now = Date.now();
+      dailyReservedBig = resvs
+        .filter((r: any) => !r.expires_at || new Date(r.expires_at).getTime() > now)
+        .reduce((sum: bigint, r: any) => sum + BigInt(r.amount_usd_micro || r.amount || '0'), 0n);
+    }
+  } catch (resvErr) {
+    console.warn('[Policy Engine] Failed to fetch active reservations:', resvErr);
+  }
+
+  const dailyBudgetBig = BigInt(policy.daily_budget || '0');
+  const remainingDailyBig = dailyBudgetBig > (dailySpentBig + dailyReservedBig)
+    ? dailyBudgetBig - (dailySpentBig + dailyReservedBig)
+    : 0n;
+
+  const monthlyBudgetBig = BigInt(policy.monthly_budget || '0');
+  const remainingMonthlyBig = monthlyBudgetBig > (monthlySpentBig + dailyReservedBig)
+    ? monthlyBudgetBig - (monthlySpentBig + dailyReservedBig)
+    : 0n;
+
+  return {
+    spendingLimitDenomination: 'USD_MICRO',
+    perTransactionLimitUsdMicro: String(policy.max_amount_per_tx || '0'),
+    dailyBudgetUsdMicro: String(policy.daily_budget || '0'),
+    dailySpentUsdMicro: dailySpentBig.toString(),
+    dailyReservedUsdMicro: dailyReservedBig.toString(),
+    remainingDailyBudgetUsdMicro: remainingDailyBig.toString(),
+    monthlyBudgetUsdMicro: String(policy.monthly_budget || '0'),
+    monthlySpentUsdMicro: monthlySpentBig.toString(),
+    remainingMonthlyBudgetUsdMicro: remainingMonthlyBig.toString(),
+    autonomousPaymentsEnabled: Boolean(policy.autonomous_payments_enabled),
+    requireApprovalAboveUsdMicro: policy.require_approval_above || null,
+    allowedNetworks: policy.allowed_networks || null,
+    allowedAssets: policy.allowed_assets || null,
+    allowedRecipients: policy.allowed_recipients || null,
+    periodStartDate: policy.period_start_date || null,
+  };
+}
