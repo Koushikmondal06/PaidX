@@ -56,13 +56,14 @@ exports.MCP_TOOL_DEFINITIONS = [
     // ==========================================
     {
         name: 'prepare_wallet_payment',
-        description: 'Prepares a recipient-directed Hedera x402 payment estimate, validating recipient address, atomic amount, and payment requirements before execution.',
+        description: 'Prepares a recipient-directed Hedera x402 payment estimate, validating recipient address (native account ID or EVM address), atomic amount, price normalization, spending limits, and payment requirements before execution.',
         inputSchema: {
             type: 'object',
             properties: {
-                recipient: { type: 'string', description: 'Recipient Hedera Account ID (e.g. 0.0.123456)' },
+                recipient: { type: 'string', description: 'Recipient Hedera Account ID (e.g. 0.0.123456) or EVM address (e.g. 0x...)' },
                 amount: { type: 'string', description: 'Amount to send (e.g. "5" or "5.00")' },
                 asset: { type: 'string', description: 'Asset symbol (e.g. USDC, HBAR). Defaults to USDC.' },
+                network: { type: 'string', description: 'Blockchain network (e.g. "hedera:testnet"). Defaults to "hedera:testnet".' },
             },
             required: ['recipient', 'amount'],
         },
