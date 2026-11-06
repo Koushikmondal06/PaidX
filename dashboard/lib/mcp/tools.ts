@@ -14,6 +14,7 @@ import {
 } from '../hedera/mirrorNode';
 import { createRecipientPaymentRequirements } from '../hedera/x402/requirements';
 import { orchestrateAgentPayment } from '../agent/orchestrator';
+import { normalizeToUsdMicro, PriceOracleError } from '../agent/priceOracle';
 import { SUPPORTED_HEDERA_ASSETS } from '../hedera/types';
 import { isValidHederaAccountId } from '../hedera/client';
 import type { AgentContext } from '../agent/policyEngine';
@@ -165,6 +166,27 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         assetSymbolOrId: tokenConfig.tokenId,
       });
 
+      // Normalize amount to common USD-micro denomination via price oracle
+      let normalized;
+      try {
+        normalized = await normalizeToUsdMicro({
+          rawAtomicAmount: atomicAmount,
+          assetSymbol: tokenConfig.symbol,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const code = err instanceof PriceOracleError ? err.code : 'PRICE_ORACLE_UNAVAILABLE';
+        return {
+          valid: false,
+          recipient,
+          amountDisplay: `${args.amount} ${tokenConfig.symbol}`,
+          atomicAmount,
+          asset: tokenConfig.symbol,
+          error: `Price conversion failed closed: ${msg}`,
+          code,
+        };
+      }
+
       return {
         valid: true,
         recipient,
@@ -174,7 +196,21 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         tokenId: tokenConfig.tokenId,
         network: requirements.network,
         scheme: requirements.scheme,
-        feePayer: requirements.extra?.feePayer,
+        feePayer: requirements.extra?.feePayer || 'facilitator (sponsored)',
+        estimatedNetworkFee: tokenConfig.isNativeHbar ? '0.001 HBAR' : '0.001 HBAR (facilitator sponsored)',
+        estimatedFeeTinybars: '100000',
+        feeModel: 'sponsored_x402',
+        feeNote: 'Hedera network transaction fees are sponsored by the PaidX x402 facilitator. The recipient receives the exact requested amount.',
+        authorizationStatus: 'prepared_only_not_authorized',
+        policyNotice: 'Preparation validates transaction format, recipient address, and atomic units only. Spending limits, daily/monthly budgets, and autonomous payment approvals are strictly verified and enforced at execution time.',
+        normalizedAmountUsdMicro: normalized.normalizedAmountUsdMicro,
+        estimatedUsdValue: `$${(Number(normalized.normalizedAmountUsdMicro) / 1_000_000).toFixed(2)}`,
+        priceConversion: {
+          priceUsd: normalized.priceQuote.priceUsd,
+          source: normalized.priceQuote.source,
+          timestamp: normalized.priceQuote.timestamp,
+          precision: normalized.conversionPrecision,
+        },
       };
     },
   },
@@ -357,17 +393,47 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         return { error: 'No policy configured for this agent' };
       }
 
+      const maxPerTx = BigInt(policy.max_amount_per_tx || '0');
       const dailyBudget = BigInt(policy.daily_budget || '0');
       const spentToday = BigInt(policy.spent_today || '0');
       const remainingToday = dailyBudget > spentToday ? dailyBudget - spentToday : 0n;
+      const monthlyBudget = BigInt(policy.monthly_budget || '0');
+      const spentThisMonth = BigInt(policy.spent_this_month || '0');
+      const POLICY_DECIMALS = 6;
 
       return {
+        // Raw atomic limits (stored in database)
         maxPerTransaction: policy.max_amount_per_tx,
         dailyBudget: policy.daily_budget,
         spentToday: policy.spent_today,
         remainingToday: remainingToday.toString(),
         monthlyBudget: policy.monthly_budget,
         spentThisMonth: policy.spent_this_month,
+
+        // Explicit Denomination & Precision Metadata
+        denomination: 'USDC_ATOMIC',
+        unit: 'micro-units (6 decimal places)',
+        baseAsset: 'USDC',
+        decimals: POLICY_DECIMALS,
+
+        // Human-Readable Formatted Displays
+        maxPerTransactionDisplay: `${fromAtomicUnits(maxPerTx.toString(), POLICY_DECIMALS)} USDC`,
+        dailyBudgetDisplay: `${fromAtomicUnits(dailyBudget.toString(), POLICY_DECIMALS)} USDC`,
+        spentTodayDisplay: `${fromAtomicUnits(spentToday.toString(), POLICY_DECIMALS)} USDC`,
+        remainingTodayDisplay: `${fromAtomicUnits(remainingToday.toString(), POLICY_DECIMALS)} USDC`,
+        monthlyBudgetDisplay: `${fromAtomicUnits(monthlyBudget.toString(), POLICY_DECIMALS)} USDC`,
+        spentThisMonthDisplay: `${fromAtomicUnits(spentThisMonth.toString(), POLICY_DECIMALS)} USDC`,
+
+        // Asset Conversion & Precision Reference
+        assetConversionReference: {
+          USDC: { decimals: 6, atomicUnitsPerToken: '1000000', atomicUnitName: 'micro-USDC' },
+          HBAR: { decimals: 8, atomicUnitsPerToken: '100000000', atomicUnitName: 'tinybar' },
+          note: 'Spending policy limits are configured in 6-decimal atomic units ($10^6 = 1.00 USDC / USD). HBAR uses 8 decimal places (100,000,000 tinybars = 1 HBAR). When evaluating HBAR payments against raw atomic limits, 1 HBAR is 100,000,000 tinybars.',
+        },
+
+        // Policy Flags
+        autonomousPaymentsEnabled: policy.autonomous_payments_enabled,
+        periodStartDate: policy.period_start_date,
       };
     },
   },
@@ -417,6 +483,12 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       validateDecimalString(String(args?.amount || ''), tokenConfig.decimals);
       const atomicAmount = parseToAtomicUnits(String(args.amount), tokenConfig.decimals).toString();
 
+      // Normalize amount into common USD-micro denomination
+      const normalized = await normalizeToUsdMicro({
+        rawAtomicAmount: atomicAmount,
+        assetSymbol: tokenConfig.symbol,
+      });
+
       const supabase = createServerSupabaseClient();
       const { data: payment, error } = await supabase
         .from('agent_payments')
@@ -433,6 +505,10 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
           status: 'approval_required',
           idempotency_key: `${ctx.agentId}:approval-${Date.now()}`,
           failure_reason: `Pending human review: ${args.reason}`,
+          amount_usd_micro: normalized.normalizedAmountUsdMicro,
+          price_source: normalized.priceQuote.source,
+          price_usd: normalized.priceQuote.priceUsd,
+          price_timestamp: new Date(normalized.priceQuote.timestamp).toISOString(),
         })
         .select()
         .single();
@@ -450,6 +526,13 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         asset: tokenConfig.symbol,
         status: 'approval_required',
         message: 'Payment request queued. The user must approve this payment in their PaidX Console before execution.',
+        normalizedAmountUsdMicro: normalized.normalizedAmountUsdMicro,
+        estimatedUsdValue: `$${(Number(normalized.normalizedAmountUsdMicro) / 1_000_000).toFixed(2)}`,
+        priceConversion: {
+          priceUsd: normalized.priceQuote.priceUsd,
+          source: normalized.priceQuote.source,
+          timestamp: normalized.priceQuote.timestamp,
+        },
       };
     },
   },
