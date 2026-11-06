@@ -8,6 +8,8 @@ export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '11155111',
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || '';
 export const EXPLORER_URL = (process.env.NEXT_PUBLIC_EXPLORER_URL || 'https://sepolia.etherscan.io').replace(/\/$/, '');
 export const PAYMENT_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS || '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238').toLowerCase();
+export const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || 'https://console.paidx.cc').replace(/\/$/, '');
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://paidx.cc').replace(/\/$/, '');
 
 export function getExplorerTxUrl(txHash: string): string {
   if (!txHash) return '#';

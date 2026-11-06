@@ -9,6 +9,7 @@ import { QrCodeDisplay } from '@/components/ui/QrCodeDisplay';
 import { getRealUserSession, UserSession } from '@/lib/auth';
 import { generateEip681PaymentUri, truncateAddress, getExplorerTxUrl } from '@/lib/base';
 import { formatUsdc } from '@/lib/currency';
+import { parseUnits } from 'viem';
 import {
   Terminal,
   CheckCircle2,
@@ -46,7 +47,12 @@ export default function VirtualTerminalPage() {
     session?.eoaAddress ||
     '';
 
-  const amountUnits = Math.round(parseFloat(amount || '0') * 1_000_000).toString();
+  let amountUnits = '0';
+  try {
+    amountUnits = parseUnits(amount || '0', 6).toString();
+  } catch {
+    amountUnits = '0';
+  }
 
   const paymentUri = generateEip681PaymentUri(
     receivingAddress,
