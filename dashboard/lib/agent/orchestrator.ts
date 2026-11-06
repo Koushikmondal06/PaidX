@@ -56,6 +56,10 @@ export interface ExecutePaymentOutput {
     | 'approved';
   error?: string;
   requiresHumanApproval?: boolean;
+  normalizedAmountUsdMicro?: string;
+  priceSource?: string;
+  priceUsd?: string;
+  priceTimestamp?: number;
 }
 
 /**
@@ -167,6 +171,13 @@ export async function orchestrateAgentPayment(
 
   // 5. Policy Check & Atomic Budget Reservation
   let reservationId: string | undefined;
+  let policyCheckDetails: {
+    normalizedAmountUsdMicro?: string;
+    priceSource?: string;
+    priceUsd?: string;
+    priceTimestamp?: number;
+  } = {};
+
   if (!input.existingPaymentId) {
     const policyResult = await evaluateAndReserveBudget({
       agentId: agentContext.agentId,
@@ -176,6 +187,13 @@ export async function orchestrateAgentPayment(
       recipient,
       idempotencyKey,
     });
+
+    policyCheckDetails = {
+      normalizedAmountUsdMicro: policyResult.normalizedAmountUsdMicro,
+      priceSource: policyResult.priceSource,
+      priceUsd: policyResult.priceUsd,
+      priceTimestamp: policyResult.priceTimestamp,
+    };
 
     if (!policyResult.allowed) {
       // If human approval is required, record payment in approval_required state
@@ -196,6 +214,12 @@ export async function orchestrateAgentPayment(
             status: 'approval_required',
             failure_reason: policyResult.reason || 'Payment requires human approval',
             idempotency_key: idempotencyKey,
+            amount_usd_micro: policyResult.normalizedAmountUsdMicro || null,
+            price_source: policyResult.priceSource || null,
+            price_usd: policyResult.priceUsd || null,
+            price_timestamp: policyResult.priceTimestamp
+              ? new Date(policyResult.priceTimestamp).toISOString()
+              : null,
           })
           .select()
           .maybeSingle();
@@ -211,6 +235,10 @@ export async function orchestrateAgentPayment(
           network,
           requiresHumanApproval: true,
           error: policyResult.reason || 'Payment declined by spending policy: Human approval required',
+          normalizedAmountUsdMicro: policyResult.normalizedAmountUsdMicro,
+          priceSource: policyResult.priceSource,
+          priceUsd: policyResult.priceUsd,
+          priceTimestamp: policyResult.priceTimestamp,
         };
       }
 
@@ -224,6 +252,10 @@ export async function orchestrateAgentPayment(
         network,
         requiresHumanApproval: false,
         error: policyResult.reason || 'Payment declined by spending policy',
+        normalizedAmountUsdMicro: policyResult.normalizedAmountUsdMicro,
+        priceSource: policyResult.priceSource,
+        priceUsd: policyResult.priceUsd,
+        priceTimestamp: policyResult.priceTimestamp,
       };
     }
 
@@ -288,6 +320,12 @@ export async function orchestrateAgentPayment(
         payment_scheme: requirements.scheme,
         status: 'reserved',
         idempotency_key: idempotencyKey,
+        amount_usd_micro: policyCheckDetails.normalizedAmountUsdMicro || null,
+        price_source: policyCheckDetails.priceSource || null,
+        price_usd: policyCheckDetails.priceUsd || null,
+        price_timestamp: policyCheckDetails.priceTimestamp
+          ? new Date(policyCheckDetails.priceTimestamp).toISOString()
+          : null,
       })
       .select()
       .single();
@@ -520,6 +558,10 @@ export async function orchestrateAgentPayment(
       hcsTopicId: hcsResult.topicId,
       hcsSequenceNumber: hcsResult.sequenceNumber,
       status: 'confirmed',
+      normalizedAmountUsdMicro: policyCheckDetails.normalizedAmountUsdMicro,
+      priceSource: policyCheckDetails.priceSource,
+      priceUsd: policyCheckDetails.priceUsd,
+      priceTimestamp: policyCheckDetails.priceTimestamp,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Payment execution failed';
