@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #FFFFFF;
+    --bg-secondary: #F7F8FC;
+    --bg-soft: #F0F2FF;
+    --card-bg: #FFFFFF;
+    --card-alt: #F3F5FF;
+    --text-primary: #090B12;
+    --text-body: #303747;
+    --text-secondary: #667085;
+    --text-muted: #9299A8;
+    --border-subtle: rgba(9, 11, 18, 0.08);
+  }
+
+  .dark {
+    --bg-primary: #050B1B;
+    --bg-secondary: #09152D;
+    --bg-soft: #0E1B38;
+    --card-bg: #101F3B;
+    --card-alt: #142443;
+    --text-primary: #F5F8FF;
+    --text-body: #D3DEF1;
+    --text-secondary: #A9B9D5;
+    --text-muted: #7184A6;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 88px;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-body);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: background-color 0.25s ease, color 0.25s ease;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Glass & Atmosphere Styles */
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(9, 11, 18, 0.08);
+}
+
+.glass-panel-dark {
+  background: rgba(16, 31, 59, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(25, 217, 242, 0.15);
+}
+
+/* Hero dark background image overlay */
+.hero-dark-bg {
+  background-image: url('/images/blue-gradient-waves.png');
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+
+/* Subtle glow animations */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 4s ease-in-out infinite;
+}

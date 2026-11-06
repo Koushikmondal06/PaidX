@@ -64,3 +64,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Media & Assets
+v1-images/
+prompts/
+
+
