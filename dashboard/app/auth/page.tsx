@@ -188,11 +188,10 @@ export default function AuthPage() {
                 setError(null);
                 setInfoMessage(null);
               }}
-              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${
-                mode === 'register'
+              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${mode === 'register'
                   ? 'bg-[#5465FF] text-white shadow-sm'
                   : 'text-[#888888] hover:text-[#DFE0E2]'
-              }`}
+                }`}
             >
               Create Account
             </button>
@@ -203,11 +202,10 @@ export default function AuthPage() {
                 setError(null);
                 setInfoMessage(null);
               }}
-              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${
-                mode === 'login'
+              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${mode === 'login'
                   ? 'bg-[#5465FF] text-white shadow-sm'
                   : 'text-[#888888] hover:text-[#DFE0E2]'
-              }`}
+                }`}
             >
               Sign In
             </button>
@@ -237,11 +235,10 @@ export default function AuthPage() {
                 setChannel('email');
                 setError(null);
               }}
-              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${
-                channel === 'email'
+              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${channel === 'email'
                   ? 'bg-[#1A2E38] text-[#5465FF] font-semibold'
                   : 'text-[#666666] hover:text-[#AAAAAA]'
-              }`}
+                }`}
             >
               Email Address
             </button>
@@ -251,11 +248,10 @@ export default function AuthPage() {
                 setChannel('phone');
                 setError(null);
               }}
-              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${
-                channel === 'phone'
+              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${channel === 'phone'
                   ? 'bg-[#1A2E38] text-[#5465FF] font-semibold'
                   : 'text-[#666666] hover:text-[#AAAAAA]'
-              }`}
+                }`}
             >
               Phone Number
             </button>
