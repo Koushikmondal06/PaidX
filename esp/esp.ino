@@ -379,8 +379,10 @@ static void drawWifiScreen() {
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   centre(ssidLine, 160, 88, 2);
 
+  char connLine[48];
+  snprintf(connLine, sizeof(connLine), "Connecting to %s...", PAIDX_WIFI_SSID);
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  centre("Connecting to 0day...", 160, 114, 2);
+  centre(connLine, 160, 114, 2);
 
   // Progress bar track
   tft.drawRect(45, 138, 230, 8, TFT_DARKGREY);
@@ -388,8 +390,10 @@ static void drawWifiScreen() {
 
   drawKey(btnWifiSkip, TFT_DARKGREY, TFT_WHITE);
 
+  char waitLine[64];
+  snprintf(waitLine, sizeof(waitLine), "Waiting for %s... Tap SKIP for offline", PAIDX_WIFI_SSID);
   tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  centre("Waiting for 0day... Tap SKIP for offline", 160, 232, 1);
+  centre(waitLine, 160, 232, 1);
 }
 
 static void drawWifiSuccess() {
@@ -2004,13 +2008,13 @@ void loop() {
         wifiConnectedAt = now;
         strncpy(wifiIpStr, WiFi.localIP().toString().c_str(), sizeof(wifiIpStr) - 1);
         wifiRssi = WiFi.RSSI();
-        Serial.printf("[wifi] Connected to 0day! IP: %s | RSSI: %d dBm\n", wifiIpStr, wifiRssi);
+        Serial.printf("[wifi] Connected to %s! IP: %s | RSSI: %d dBm\n", PAIDX_WIFI_SSID, wifiIpStr, wifiRssi);
         drawWifiSuccess();
       } else if ((uint32_t)(now - wifiConnectedAt) >= WIFI_SUCCESS_MS) {
         proceedPastWifi();
       }
     } else {
-      // Stay on screen indefinitely until 0day connects.
+      // Stay on screen indefinitely until Wi-Fi connects.
       // Re-trigger connection attempt every 8 seconds in case AP was booted late.
       if ((uint32_t)(now - lastWifiRetryMs) >= 8000) {
         lastWifiRetryMs = now;

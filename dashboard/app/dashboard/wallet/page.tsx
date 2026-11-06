@@ -137,7 +137,7 @@ export default function ConsoleWalletPage() {
     setIsFundingRelayer(true);
     setBalanceError(null);
     try {
-      const walletClient = getBrowserWalletClient(connectedAddress);
+      const walletClient = await getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const hash = await walletClient.sendTransaction({
         account: connectedAddress,
@@ -310,7 +310,7 @@ export default function ConsoleWalletPage() {
       }
 
       const senderAddress = connectedAddress as Address;
-      const walletClient = getBrowserWalletClient(senderAddress);
+      const walletClient = await getBrowserWalletClient(senderAddress);
       const publicClient = getBrowserPublicClient();
       const targetToken = SUPPORTED_TOKENS[selectedCurrency];
       const parsedAmount = parseUnits(amount.trim(), targetToken.decimals);
