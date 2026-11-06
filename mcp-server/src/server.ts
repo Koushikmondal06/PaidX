@@ -1,5 +1,4 @@
 import http from 'http';
-import dotenv from 'dotenv';
 import { randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -10,8 +9,6 @@ import {
   isInitializeRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 import { MCP_TOOL_DEFINITIONS } from './tools.js';
-
-dotenv.config();
 
 // Port & Host Configuration (Fallback for local server mode)
 export const PORT = parseInt(process.env.PORT || process.env.MCP_PORT || '3002', 10);

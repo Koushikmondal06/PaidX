@@ -90,6 +90,12 @@ export function startMcpServer(port: number = PORT, host: string = HOST): http.S
 }
 
 if (isMainModule()) {
+  try {
+    // Dynamically load dotenv only in standalone local development mode
+    // Never loaded or required in Vercel serverless production
+    const dotenv = require('dotenv');
+    dotenv.config();
+  } catch {}
   startMcpServer();
 }
 

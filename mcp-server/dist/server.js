@@ -1,7 +1,4 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.tokenValidationCache = exports.sseLegacyTransports = exports.sessions = exports.TOKEN_CACHE_TTL_MS = exports.SESSION_TTL_MS = exports.MAX_REQUEST_SIZE_BYTES = exports.PAIDX_BACKEND_URL = exports.HOST = exports.PORT = void 0;
 exports.getBackendUrl = getBackendUrl;
@@ -16,13 +13,11 @@ exports.applyCorsHeaders = applyCorsHeaders;
 exports.handleHealthRequest = handleHealthRequest;
 exports.handleMcpRequest = handleMcpRequest;
 exports.handleVercelRequest = handleVercelRequest;
-const dotenv_1 = __importDefault(require("dotenv"));
 const crypto_1 = require("crypto");
 const index_js_1 = require("@modelcontextprotocol/sdk/server/index.js");
 const streamableHttp_js_1 = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const types_js_1 = require("@modelcontextprotocol/sdk/types.js");
 const tools_js_1 = require("./tools.js");
-dotenv_1.default.config();
 // Port & Host Configuration (Fallback for local server mode)
 exports.PORT = parseInt(process.env.PORT || process.env.MCP_PORT || '3002', 10);
 exports.HOST = '0.0.0.0';

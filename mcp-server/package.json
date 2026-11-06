@@ -4,7 +4,8 @@
   "description": "PaidX Dedicated Remote MCP Server for Hedera x402 Conversational Wallet Payments",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run bundle",
+    "bundle": "esbuild src/api-mcp.ts --bundle --platform=node --target=node18 --outfile=api/mcp.js && esbuild src/api-index.ts --bundle --platform=node --target=node18 --outfile=api/index.js && cp api/index.js index.js",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts"
   },
@@ -13,6 +14,7 @@
     "@modelcontextprotocol/sdk": "^1.21.0",
     "@types/node": "^22.10.2",
     "dotenv": "^16.4.7",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.2"
   },
   "devDependencies": {
