@@ -32,14 +32,14 @@ test('MCP Success Modal Configuration & Backend-Assisted Verifier Suite', async 
   // --------------------------------------------------------------------------
   await t.test('1: Public MCP URL resolves correctly with environment variables and safe defaults', () => {
     // 1. Explicit override via NEXT_PUBLIC_MCP_SERVER_URL
-    process.env.NEXT_PUBLIC_MCP_SERVER_URL = 'https://agents.paidx.cc/mcp';
-    assert.strictEqual(getPublicMcpServerUrl(), 'https://agents.paidx.cc/mcp');
+    process.env.NEXT_PUBLIC_MCP_SERVER_URL = 'https://mcp-paidx.onrender.com/mcp';
+    assert.strictEqual(getPublicMcpServerUrl(), 'https://mcp-paidx.onrender.com/mcp');
 
     // 2. Production fallback when env var is absent
     delete process.env.NEXT_PUBLIC_MCP_SERVER_URL;
     process.env.NODE_ENV = 'production';
     assert.strictEqual(getPublicMcpServerUrl(), PRODUCTION_MCP_URL);
-    assert.strictEqual(getPublicMcpServerUrl(), 'https://agents.paidx.cc/mcp');
+    assert.strictEqual(getPublicMcpServerUrl(), 'https://mcp-paidx.onrender.com/mcp');
 
     // 3. Development fallback
     process.env.NODE_ENV = 'development';
@@ -56,12 +56,12 @@ test('MCP Success Modal Configuration & Backend-Assisted Verifier Suite', async 
   // --------------------------------------------------------------------------
   await t.test('2: Generated MCP configuration JSON conforms to Claude Desktop & Cursor specs', () => {
     const testToken = 'paidx_agt_' + randomUUID().replace(/-/g, '');
-    const config = buildMcpClientConfig(testToken, 'https://agents.paidx.cc/mcp');
+    const config = buildMcpClientConfig(testToken, 'https://mcp-paidx.onrender.com/mcp');
 
     assert.deepStrictEqual(config, {
       mcpServers: {
         paidx: {
-          url: 'https://agents.paidx.cc/mcp',
+          url: 'https://mcp-paidx.onrender.com/mcp',
           headers: {
             Authorization: `Bearer ${testToken}`,
           },
@@ -71,7 +71,7 @@ test('MCP Success Modal Configuration & Backend-Assisted Verifier Suite', async 
 
     const jsonString = JSON.stringify(config, null, 2);
     const parsed = JSON.parse(jsonString);
-    assert.strictEqual(parsed.mcpServers.paidx.url, 'https://agents.paidx.cc/mcp');
+    assert.strictEqual(parsed.mcpServers.paidx.url, 'https://mcp-paidx.onrender.com/mcp');
     assert.strictEqual(parsed.mcpServers.paidx.headers.Authorization, `Bearer ${testToken}`);
     assert.strictEqual(jsonString.includes('localhost:3000/api/mcp'), false);
   });
