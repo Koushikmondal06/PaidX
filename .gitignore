@@ -4,6 +4,8 @@ node_modules/
 
 # Production & Build outputs
 dist/
+!mcp-server/dist/
+!mcp-server/dist/**
 build/
 out/
 cache/

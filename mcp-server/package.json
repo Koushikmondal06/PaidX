@@ -11,11 +11,11 @@
   "dependencies": {
     "@hiero-ledger/sdk": "^2.61.1",
     "@modelcontextprotocol/sdk": "^1.21.0",
-    "dotenv": "^16.4.7"
+    "@types/node": "^22.10.2",
+    "dotenv": "^16.4.7",
+    "typescript": "^5.7.2"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "tsx": "^4.19.2"
   }
 }
