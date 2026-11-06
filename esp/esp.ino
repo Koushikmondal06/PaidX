@@ -56,7 +56,7 @@
 #endif
 
 #ifndef PAIDX_API_BASE
-  #define PAIDX_API_BASE "http://10.50.14.233:3001/api/pos"
+  #define PAIDX_API_BASE "https://console.paidx.cc/api"
 #endif
 
 #ifndef PAIDX_DEVICE_UUID
@@ -830,7 +830,7 @@ static void drawReceipt() {
     tft.setTextFont(4);
     tft.setTextDatum(TL_DATUM);
     tft.drawString("SETTLED", 16, 18);
-    tft.drawString("ON BASE", 16, 44);
+    tft.drawString("ON SEPOLIA", 16, 44);
 
     char line[24];
     formatAmount(line, sizeof(line));
@@ -844,7 +844,7 @@ static void drawReceipt() {
     tft.drawString(shortTx, 16, 108);
 
     tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    tft.drawString("Base Sepolia (84532)", 16, 132);
+    tft.drawString("Sepolia (11155111)", 16, 132);
 
     btnHome.x = 16;
     btnHome.y = 168;
@@ -863,7 +863,7 @@ static void drawReceipt() {
     tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
     tft.setTextFont(1);
     tft.setTextDatum(TC_DATUM);
-    tft.drawString("Scan for BaseScan", 238, 168, 1);
+    tft.drawString("Scan for Etherscan", 238, 168, 1);
   } else {
     btnHome.x = 100;
     btnHome.y = 174;
@@ -1025,34 +1025,45 @@ static bool executeCardSaleHttp(const char* uidDense, const char* chipSecret, co
   }
 
   char url[128];
-  snprintf(url, sizeof(url), "%s/sale", PAIDX_API_BASE);
+  if (strstr(PAIDX_API_BASE, "/payments") != NULL) {
+    snprintf(url, sizeof(url), "%s", PAIDX_API_BASE);
+  } else if (strstr(PAIDX_API_BASE, "/pos") != NULL) {
+    snprintf(url, sizeof(url), "%s/sale", PAIDX_API_BASE);
+  } else {
+    snprintf(url, sizeof(url), "%s/payments", PAIDX_API_BASE);
+  }
   Serial.printf("[http-sale] POST to %s ...\n", url);
 
   HTTPClient http;
   http.setConnectTimeout(6000);
-  http.setTimeout(18000); // Base broadcast + block receipt takes ~3-5s
+  http.setTimeout(18000); // Sepolia broadcast + receipt
   if (!http.begin(url)) {
     Serial.println(F("[http-sale] http.begin failed"));
     strncpy(opFailReason, "HTTP connect failed", sizeof(opFailReason) - 1);
     return false;
   }
 
+  char clientSaleId[36];
+  snprintf(clientSaleId, sizeof(clientSaleId), "pos-%lu-%u", (unsigned long)millis(), (unsigned)random(1000, 9999));
+
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Accept", "application/json");
   http.addHeader("X-Device-UUID", PAIDX_DEVICE_UUID);
   http.addHeader("X-Device-Token", PAIDX_DEVICE_TOKEN);
+  http.addHeader("Idempotency-Key", clientSaleId);
+  http.addHeader("X-Idempotency-Key", clientSaleId);
+  http.addHeader("X-Merchant-Id", PAIDX_MERCHANT_ID);
   http.addHeader("Authorization", "Bearer " PAIDX_DEVICE_TOKEN);
-
-  char clientSaleId[36];
-  snprintf(clientSaleId, sizeof(clientSaleId), "pos-%lu-%u", (unsigned long)millis(), (unsigned)random(1000, 9999));
 
   JsonDocument doc;
   doc["clientSaleId"]    = clientSaleId;
+  doc["idempotencyKey"]  = clientSaleId;
   doc["merchantId"]      = PAIDX_MERCHANT_ID;
   doc["merchantAddress"] = PAIDX_MERCHANT_ADDRESS;
   doc["posDeviceId"]     = PAIDX_DEVICE_UUID;
   doc["paymentMethod"]   = "card_tap";
   doc["cardUid"]         = uidDense;
+  doc["rawCardUid"]      = uidDense;
   doc["cardSecret"]      = chipSecret;
   doc["amount"]          = amountEth;
 
@@ -1083,23 +1094,25 @@ static bool executeCardSaleHttp(const char* uidDense, const char* chipSecret, co
   }
 
   if (httpCode >= 200 && httpCode < 300) {
-    const char* tx = resDoc["txHash"] | "";
-    const char* expUrl = resDoc["explorerUrl"] | "";
+    const char* tx = resDoc["payment"]["tx_hash"] | resDoc["txHash"] | "";
+    char generatedExplorerUrl[130] = "";
     if (strlen(tx) > 0) {
       strncpy(lastTxHash, tx, sizeof(lastTxHash) - 1);
       lastTxHash[sizeof(lastTxHash) - 1] = 0;
       isLiveOnChainTx = true;
+      snprintf(generatedExplorerUrl, sizeof(generatedExplorerUrl), "https://sepolia.etherscan.io/tx/%s", tx);
     }
+    const char* expUrl = resDoc["explorerUrl"] | (generatedExplorerUrl[0] != 0 ? generatedExplorerUrl : "");
     if (strlen(expUrl) > 0) {
       strncpy(lastExplorerUrl, expUrl, sizeof(lastExplorerUrl) - 1);
       lastExplorerUrl[sizeof(lastExplorerUrl) - 1] = 0;
     }
-    strncpy(opResultTitle, "SETTLED ON BASE", sizeof(opResultTitle) - 1);
+    strncpy(opResultTitle, "SETTLED ON SEPOLIA", sizeof(opResultTitle) - 1);
     strncpy(opResultMsg, "On-Chain Verified", sizeof(opResultMsg) - 1);
     Serial.printf("[http-sale] SUCCESS! TxHash: %s\n", lastTxHash);
     return true;
   } else {
-    const char* errMsg = resDoc["error"] | "Payment rejected";
+    const char* errMsg = resDoc["error"] | resDoc["message"] | "Payment rejected";
     strncpy(opFailReason, errMsg, sizeof(opFailReason) - 1);
     Serial.printf("[http-sale] DECLINED: %s\n", opFailReason);
     return false;
@@ -1550,13 +1563,13 @@ static void pollNFC() {
       lastVerifyAnimMs = 0;
 
       verifyStageMsg[0] = "Connecting to PaidX API";
-      verifyStageMsg[1] = "Signing Base Transfer";
-      verifyStageMsg[2] = "Settling on Base Chain";
+      verifyStageMsg[1] = "Signing Sepolia Transfer";
+      verifyStageMsg[2] = "Settling on Ethereum";
 
       Serial.printf("[payment] Card recognized (%s). Entering verification...\n", lastScannedUid);
       enterScreen(SCR_VERIFYING);
 
-      // Real on-chain broadcast to Base Sepolia via PaidX Backend
+      // Real on-chain broadcast to Ethereum Sepolia via PaidX Backend
       if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[payment] Dispatching on-chain sale: %s ETH for Card %s ...\n", amountDec, lastDenseUid);
         paymentApproved = executeCardSaleHttp(lastDenseUid, chipSecret, amountDec);
