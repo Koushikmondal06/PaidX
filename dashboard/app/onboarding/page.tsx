@@ -13,7 +13,7 @@ import { PAYMENT_TOKEN_ADDRESS, truncateAddress, getExplorerTxUrl } from '@/lib/
 import { getBrowserPublicClient, getBrowserWalletClient, CHAIN_ID } from '@/lib/chain';
 import { getUpgradeStatus, checkWalletCapabilities, triggerSmartAccountUpgrade, UpgradeStatusResult } from '@/lib/eip7702';
 import { getCardRegistryAddress, CARD_REGISTRY_ABI, ERC20_ABI } from '@/lib/contracts';
-import { isAddress, parseUnits, type Address, type Hash, type Hex } from 'viem';
+import { isAddress, type Address, type Hash } from 'viem';
 import {
   Wallet,
   CreditCard,
@@ -582,9 +582,8 @@ export default function OnboardingPage() {
               setRole('payer');
               setStep(connectedAddress ? (upgradeStatus.status === 'upgraded' ? 4 : 3) : 2);
             }}
-            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${
-              role === 'payer' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
+            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${role === 'payer' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+              }`}
           >
             <User className="w-4 h-4" />
             <span>Customer (Payer)</span>
@@ -592,9 +591,8 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={() => setRole('merchant')}
-            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${
-              role === 'merchant' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-            }`}
+            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${role === 'merchant' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
+              }`}
           >
             <Store className="w-4 h-4" />
             <span>Retail Merchant</span>
@@ -607,13 +605,12 @@ export default function OnboardingPage() {
             {[1, 2, 3, 4, 5].map((s) => (
               <div key={s} className="flex items-center gap-1">
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                    s < step
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${s < step
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                       : s === step
-                      ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
-                      : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
-                  }`}
+                        ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
+                        : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
+                    }`}
                 >
                   {s < step ? '✓' : s}
                 </div>
@@ -696,7 +693,7 @@ export default function OnboardingPage() {
               <div className="flex justify-between items-center">
                 <span className="text-[#AAAAAA]">Account Status:</span>
                 <Badge variant={upgradeStatus.status === 'upgraded' ? 'active' : 'warning'}>
-                  {upgradeStatus.status === 'upgraded' ? 'MetaMask Smart Account' : upgradeStatus.isForeignDelegation ? 'Delegated (Foreign)' : 'EOA'}
+                  {upgradeStatus.status === 'upgraded' ? 'MetaMask Smart Account' : upgradeStatus.status === 'unsupported' ? 'Delegated (Foreign)' : 'EOA'}
                 </Badge>
               </div>
               {upgradeStatus.warning && (
@@ -789,11 +786,10 @@ export default function OnboardingPage() {
                       setSpendingLimit(preset);
                       setIsCustomLimit(false);
                     }}
-                    className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${
-                      !isCustomLimit && spendingLimit === preset
+                    className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${!isCustomLimit && spendingLimit === preset
                         ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                         : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
-                    }`}
+                      }`}
                   >
                     ${preset}
                   </button>
@@ -833,11 +829,10 @@ export default function OnboardingPage() {
                     key={exp.val}
                     type="button"
                     onClick={() => setExpiryDays(exp.val)}
-                    className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${
-                      expiryDays === exp.val
+                    className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${expiryDays === exp.val
                         ? 'bg-indigo-600 text-white border-indigo-500'
                         : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
-                    }`}
+                      }`}
                   >
                     {exp.label}
                   </button>
