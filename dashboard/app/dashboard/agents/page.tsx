@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { StatCard } from '@/components/ui/StatCard';
 import { getStoredSession } from '@/lib/auth';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import {
   Bot,
   Plus,
@@ -95,36 +96,26 @@ export default function AgentWalletPage() {
   // Load Agents & Payments
   const loadData = async () => {
     try {
-      const res = await fetch('/api/agents', {
-        headers: { 'x-user-id': userId },
-      });
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch('/api/agents', { headers });
       if (res.ok) {
         const data = await res.json();
         setAgents(data.agents || []);
       }
 
-      // Fetch payment history
-      const histRes = await fetch('/api/mcp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer paidx_admin',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/call',
-          params: { name: 'get_payment_history', arguments: { limit: 10 } },
-        }),
-      });
-
+      // Fetch payment history scoped to user
+      const histRes = await fetch('/api/agents/payments', { headers });
       if (histRes.ok) {
         const histData = await histRes.json();
-        const contentStr = histData.result?.content?.[0]?.text;
-        if (contentStr) {
-          const parsed = JSON.parse(contentStr);
-          if (parsed.payments) setPayments(parsed.payments);
-        }
+        if (histData.payments) setPayments(histData.payments);
       }
     } catch (err) {
       console.warn('[Agents Page] Failed to fetch:', err);
@@ -142,11 +133,17 @@ export default function AgentWalletPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+
       const res = await fetch('/api/agents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
-          userId,
           agentName,
           maxAmountPerTx: (parseFloat(maxPerTx) * 1000000).toString(),
           dailyBudget: (parseFloat(dailyBudget) * 1000000).toString(),
@@ -173,9 +170,16 @@ export default function AgentWalletPage() {
   const handleRevokeAgent = async (agentId: string) => {
     if (!confirm('Are you sure you want to revoke this agent? It will immediately lose wallet access.')) return;
     try {
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+
       const res = await fetch('/api/agents/revoke', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ agentId }),
       });
       if (res.ok) {
@@ -196,12 +200,19 @@ export default function AgentWalletPage() {
     setIsChatSending(true);
 
     try {
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+
       const res = await fetch('/api/agents/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           prompt: text,
-          userId,
+          agentId: agents[0]?.id,
         }),
       });
 
@@ -212,7 +223,7 @@ export default function AgentWalletPage() {
           {
             sender: 'agent',
             text: data.response,
-            details: data.result,
+            details: data.details,
           },
         ]);
       } else {
@@ -252,6 +263,7 @@ export default function AgentWalletPage() {
             <h1 className="text-2xl font-bold text-[#DFE0E2] tracking-tight">AI Agent Wallet</h1>
             <Badge variant="active">Hedera x402</Badge>
             <Badge variant="info">HTS + HCS Native</Badge>
+            <Badge variant="info">16 MCP Tools</Badge>
           </div>
           <p className="text-sm text-[#AAAAAA] mt-1 font-mono">
             Connect AI agents to your PaidX wallet for conversational payments on Hedera Testnet.
