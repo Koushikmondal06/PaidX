@@ -20,8 +20,9 @@ export interface PaymentExecutionResult {
 }
 
 /**
- * Authoritatively executes an on-chain delegation redemption on Ethereum Sepolia.
- * NEVER returns fake hashes, mock receipts, or synthetic confirmation.
+ * Authoritatively executes an on-chain settlement on Ethereum Sepolia.
+ * Uses customer's approved allowance to transfer tokens directly to the merchant.
+ * The session relayer only pays gas; it NEVER spends its own funds for customer retail purchases.
  */
 export async function executeDelegationRedemption({
   tokenAddress,
@@ -67,9 +68,12 @@ export async function executeDelegationRedemption({
   }
 
   const env = getSmartAccountsEnvironment(CHAIN_ID);
-  const delegationManagerAddress = (env?.DelegationManager || '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3') as Address;
+  const delegationManagerAddress = (
+    process.env.DELEGATION_MANAGER_ADDRESS ||
+    env?.DelegationManager ||
+    '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3'
+  ) as Address;
 
-  // 1. Encode the target ERC-20 transfer: transfer(recipient, amount)
   const transferCalldata = encodeFunctionData({
     abi: ERC20_ABI,
     functionName: 'transfer',
@@ -77,17 +81,12 @@ export async function executeDelegationRedemption({
   });
 
   try {
-    // Check if bundler RPC URL is provided for ERC-4337 submission
-    const bundlerRpcUrl = process.env.BUNDLER_RPC_URL;
-    let userOpHash: string | undefined = undefined;
-
-    // Build the redemption call
     let txHash: Hex;
+    let userOpHash: string | undefined = undefined;
 
     // Check if grantPayload includes a signed delegation
     const signedDelegation = grantPayload?.delegation || grantPayload;
     if (signedDelegation && signedDelegation.delegator) {
-      // Encode redeemDelegations call using MetaMask Smart Accounts Kit contracts
       const redeemCalldata = contracts.DelegationManager.encode.redeemDelegations({
         delegations: [[signedDelegation]],
         modes: [ExecutionMode.SingleDefault],
@@ -102,16 +101,16 @@ export async function executeDelegationRedemption({
         ],
       });
 
-      // Submit transaction to the network via session account
+      // Submit transaction to DelegationManager via session account
       txHash = await walletClient.sendTransaction({
         to: delegationManagerAddress,
         data: redeemCalldata,
       });
     } else {
-      // Direct session transfer via approved spending delegation
+      // Direct session transfer via customer-approved spending allowance
       const resolvedPayer = (payerAddress || grantPayload?.payerAddress) as Address;
-      if (!resolvedPayer) {
-        throw new Error('Payer wallet address is missing from permission grant payload.');
+      if (!resolvedPayer || resolvedPayer.toLowerCase() === sessionAccount.address.toLowerCase()) {
+        throw new Error('Valid customer payer wallet address is required. Session relayer cannot be the payer.');
       }
 
       const transferFromCalldata = encodeFunctionData({
@@ -126,7 +125,7 @@ export async function executeDelegationRedemption({
       });
     }
 
-    // Wait for the authoritative on-chain receipt
+    // Wait for the authoritative on-chain receipt on Ethereum Sepolia
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,
       confirmations: 1,
@@ -158,4 +157,3 @@ export async function executeDelegationRedemption({
     };
   }
 }
-

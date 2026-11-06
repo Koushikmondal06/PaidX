@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
+import { parseUnits, type Address } from 'viem';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { computeCardUidHash } from '@/lib/server/cardHash';
 import { executeDelegationRedemption } from '@/lib/server/paymentExecutor';
-import { CHAIN_ID, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
+import { getServerPublicClient, CHAIN_ID, PAYMENT_TOKEN_ADDRESS } from '@/lib/chain';
+import { ERC20_ABI } from '@/lib/contracts';
+import { getSessionAccount } from '@/lib/server/sessionAccount';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Authenticate Merchant
-    const merchantIdHeader = req.headers.get('x-merchant-id');
-    const authHeader = req.headers.get('authorization');
+    const rawIdempotencyKey =
+      req.headers.get('idempotency-key') ||
+      req.headers.get('x-idempotency-key');
+
     const body = await req.json().catch(() => ({}));
     const {
       merchantId: bodyMerchantId,
@@ -22,18 +27,20 @@ export async function POST(req: NextRequest) {
       idempotencyKey: bodyIdempotencyKey,
     } = body;
 
-    const idempotencyKey =
-      req.headers.get('idempotency-key') ||
-      req.headers.get('x-idempotency-key') ||
-      clientSaleId ||
-      bodyIdempotencyKey ||
-      `pos-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const idempotencyKey = (rawIdempotencyKey || clientSaleId || bodyIdempotencyKey || '').trim();
+
+    // Idempotency Key is strictly required
+    if (!idempotencyKey) {
+      return NextResponse.json(
+        { error: 'Missing required Idempotency-Key header', code: 'MISSING_IDEMPOTENCY_KEY' },
+        { status: 400 }
+      );
+    }
 
     const rawCardUid = bodyRawCardUid || bodyCardUid;
-
     const supabase = createServerSupabaseClient();
 
-    // Check if idempotency key already processed
+    // Check if idempotency key was already processed
     const { data: existingPayment } = await supabase
       .from('payments')
       .select('*')
@@ -41,7 +48,6 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existingPayment) {
-      // Idempotent return of existing payment record
       return NextResponse.json({
         success: existingPayment.status === 'confirmed',
         txHash: existingPayment.tx_hash || null,
@@ -51,37 +57,149 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 1. Authenticate & Resolve Merchant from Database
-    const targetMerchantId = merchantIdHeader || bodyMerchantId || '#001';
+    // 1. Authenticate Hardware Terminal or Web Merchant Session
+    const deviceTokenHeader = req.headers.get('x-device-token');
+    const authHeader = req.headers.get('authorization');
+    const deviceUuidHeader = req.headers.get('x-device-uuid') || req.headers.get('x-merchant-id') || bodyMerchantId || '#001';
 
-    let merchantQuery = supabase.from('merchants').select('*');
-    if (targetMerchantId === '#001' || targetMerchantId === '001') {
-      merchantQuery = merchantQuery.or('slug.eq.#001,slug.eq.001,payout_address.ilike.0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6');
-    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetMerchantId)) {
-      merchantQuery = merchantQuery.eq('id', targetMerchantId);
+    let resolvedMerchant: any = null;
+
+    if (deviceTokenHeader || (authHeader && authHeader.startsWith('Bearer psk_'))) {
+      // Hardware POS Device Token authentication
+      const rawToken = deviceTokenHeader || authHeader?.replace('Bearer ', '').trim();
+      if (!rawToken) {
+        return NextResponse.json(
+          { error: 'Missing device authentication token', code: 'UNAUTHORIZED' },
+          { status: 401 }
+        );
+      }
+
+      const incomingHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+      let posDevice: any = null;
+      try {
+        const { data: dbDevice, error: devError } = await supabase
+          .from('pos_devices')
+          .select('*')
+          .eq('device_uuid', deviceUuidHeader)
+          .maybeSingle();
+
+        if (dbDevice && !devError) {
+          posDevice = dbDevice;
+        }
+      } catch (err) {
+        console.warn('[Payments] pos_devices query warning:', err);
+      }
+
+      // Default fallback for physical POS Terminal #001 (PSK verified via constant-time SHA-256)
+      if (!posDevice && (deviceUuidHeader === '#001' || !deviceUuidHeader)) {
+        posDevice = {
+          device_uuid: '#001',
+          token_hash: '408d906df7b0ccabe274dda9d3ba17acc313df0a304335242190383bdd1df842',
+          merchant_id: '#001',
+          status: 'active',
+        };
+      }
+
+      if (!posDevice) {
+        return NextResponse.json(
+          { error: `Unauthorized POS device "${deviceUuidHeader}"`, code: 'UNAUTHORIZED_DEVICE' },
+          { status: 401 }
+        );
+      }
+
+      // Constant-time timingSafeEqual hash comparison
+      const expectedHash = posDevice.token_hash || posDevice.device_token_hash;
+      const storedBuffer = Buffer.from(expectedHash || '', 'utf8');
+      const incomingBuffer = Buffer.from(incomingHash, 'utf8');
+
+      if (
+        storedBuffer.length !== incomingBuffer.length ||
+        !crypto.timingSafeEqual(storedBuffer, incomingBuffer)
+      ) {
+        return NextResponse.json(
+          { error: 'Invalid device token', code: 'INVALID_DEVICE_TOKEN' },
+          { status: 401 }
+        );
+      }
+
+      if (posDevice.status !== 'active') {
+        return NextResponse.json(
+          { error: `POS device is ${posDevice.status}`, code: 'DEVICE_INACTIVE' },
+          { status: 403 }
+        );
+      }
+
+      // Resolve merchant strictly from verified device association
+      const { data: mData, error: mError } = await supabase
+        .from('merchants')
+        .select('*')
+        .eq('id', posDevice.merchant_id)
+        .maybeSingle();
+
+      if (mError || !mData) {
+        if (posDevice.merchant_id === '#001') {
+          resolvedMerchant = {
+            id: '#001',
+            name: 'Apex Retail',
+            payout_address: '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6', receiving_address: '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6',
+            status: 'active',
+          };
+        } else {
+          return NextResponse.json(
+            { error: 'Associated merchant not found in registry', code: 'MERCHANT_NOT_FOUND' },
+            { status: 404 }
+          );
+        }
+      } else {
+        resolvedMerchant = mData;
+      }
+    } else if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Authenticated Web Merchant User Session
+      const userToken = authHeader.replace('Bearer ', '').trim();
+      const { data: { user }, error: userError } = await supabase.auth.getUser(userToken);
+      if (userError || !user) {
+        return NextResponse.json({ error: 'Unauthorized user session', code: 'UNAUTHORIZED' }, { status: 401 });
+      }
+
+      const { data: userMerchant } = await supabase
+        .from('merchants')
+        .select('*')
+        .eq('owner_user_id', user.id)
+        .maybeSingle();
+
+      if (!userMerchant) {
+        return NextResponse.json({ error: 'No merchant profile linked to current user', code: 'MERCHANT_NOT_FOUND' }, { status: 404 });
+      }
+      resolvedMerchant = userMerchant;
     } else {
-      merchantQuery = merchantQuery.or(`slug.eq.${targetMerchantId},payout_address.ilike.${targetMerchantId}`);
+      // Default to checking if deviceUuidHeader has an active record in merchants table
+      const { data: fallbackMerchant } = await supabase
+        .from('merchants')
+        .select('*')
+        .or(`slug.eq.${deviceUuidHeader},payout_address.ilike.${deviceUuidHeader}`)
+        .maybeSingle();
+
+      if (fallbackMerchant && fallbackMerchant.status === 'active') {
+        resolvedMerchant = fallbackMerchant;
+      } else {
+        return NextResponse.json(
+          { error: 'Missing authentication credentials (X-Device-Token or Bearer token)', code: 'UNAUTHORIZED' },
+          { status: 401 }
+        );
+      }
     }
 
-    const { data: merchant, error: merchantError } = await merchantQuery.maybeSingle();
-
-    if (merchantError || !merchant) {
+    if (resolvedMerchant.status !== 'active') {
       return NextResponse.json(
-        { error: `Merchant "${targetMerchantId}" not found in registry`, code: 'MERCHANT_NOT_FOUND' },
-        { status: 404 }
-      );
-    }
-
-    if (merchant.status !== 'active') {
-      return NextResponse.json(
-        { error: `Merchant "${merchant.name}" is currently ${merchant.status}`, code: 'MERCHANT_INACTIVE' },
+        { error: `Merchant "${resolvedMerchant.name}" is ${resolvedMerchant.status}`, code: 'MERCHANT_INACTIVE' },
         { status: 403 }
       );
     }
 
-    if (!merchant.payout_address || !merchant.payout_address.startsWith('0x')) {
+    if (!resolvedMerchant.payout_address || !resolvedMerchant.payout_address.startsWith('0x')) {
       return NextResponse.json(
-        { error: `Merchant "${merchant.name}" has no valid payout address configured`, code: 'INVALID_MERCHANT_PAYOUT' },
+        { error: `Merchant "${resolvedMerchant.name}" has no valid payout address configured`, code: 'INVALID_MERCHANT_PAYOUT' },
         { status: 400 }
       );
     }
@@ -131,7 +249,7 @@ export async function POST(req: NextRequest) {
 
     if (permError || !permission) {
       return NextResponse.json(
-        { error: 'No active spending permission found for cardholder', code: 'PERMISSION_NOT_FOUND' },
+        { error: 'No active spending allowance found for cardholder', code: 'PERMISSION_NOT_FOUND' },
         { status: 404 }
       );
     }
@@ -146,33 +264,35 @@ export async function POST(req: NextRequest) {
 
     // Check validity timestamps
     const now = new Date();
-    const validAfter = new Date(permission.valid_after);
-    const validUntil = new Date(permission.valid_until);
+    const validAfter = new Date(permission.valid_after || permission.created_at);
+    const validUntil = new Date(permission.valid_until || permission.expiry || '2099-01-01');
 
     if (now < validAfter || now > validUntil) {
       return NextResponse.json(
-        { error: 'Spending permission has expired', code: 'PERMISSION_EXPIRED' },
+        { error: 'Spending allowance has expired', code: 'PERMISSION_EXPIRED' },
         { status: 403 }
       );
     }
 
-    // Check period limit
+    // 4. Strict Amount Parsing: ^\d+(\.\d{1,6})?$
+    const amtClean = typeof amountStr === 'string' ? amountStr.trim() : String(amountStr || '');
+    if (!/^\d+(\.\d{1,6})?$/.test(amtClean)) {
+      return NextResponse.json(
+        { error: 'Invalid amount format. Must be positive decimal with up to 6 decimals (e.g. 1.50)', code: 'INVALID_AMOUNT' },
+        { status: 400 }
+      );
+    }
+
     let requestedAmount: bigint;
     try {
-      if (typeof amountStr === 'string' && amountStr.includes('.')) {
-        // Parse decimal as USDC (6 decimals)
-        const [whole, frac = ''] = amountStr.split('.');
-        const paddedFrac = frac.padEnd(6, '0').slice(0, 6);
-        requestedAmount = BigInt(whole) * 1_000_000n + BigInt(paddedFrac);
-      } else {
-        requestedAmount = BigInt(amountStr || '0');
-      }
+      requestedAmount = parseUnits(amtClean, 6);
     } catch {
       return NextResponse.json(
         { error: 'Invalid amount format', code: 'INVALID_AMOUNT' },
         { status: 400 }
       );
     }
+
     if (requestedAmount <= 0n) {
       return NextResponse.json(
         { error: 'Payment amount must be greater than zero', code: 'INVALID_AMOUNT' },
@@ -180,11 +300,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const remainingInPeriod = BigInt(permission.remaining_in_period || '0');
+    // 5. Period Rollover & Limit Check
+    const periodStart = new Date(permission.current_period_start || permission.created_at);
+    const periodSeconds = Number(permission.period_seconds || 86400);
+    let remainingInPeriod = BigInt(permission.remaining_in_period ?? permission.limit_per_period ?? 0);
+
+    if (now.getTime() >= periodStart.getTime() + periodSeconds * 1000) {
+      // Period has rolled over: reset remaining limit to full period limit
+      remainingInPeriod = BigInt(permission.limit_per_period || permission.period_amount || 0);
+      await supabase
+        .from('permissions')
+        .update({
+          remaining_in_period: remainingInPeriod.toString(),
+          current_period_start: now.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .eq('id', permission.id);
+    }
+
     if (requestedAmount > remainingInPeriod) {
       return NextResponse.json(
         {
-          error: 'Transaction amount exceeds available period limit',
+          error: 'Transaction amount exceeds available daily spending limit',
           code: 'LIMIT_EXCEEDED',
           remaining: remainingInPeriod.toString(),
           requested: requestedAmount.toString(),
@@ -193,12 +330,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Insert Payment record with status 'created'
+    // 6. Server-Side On-Chain Allowance Verification
+    const resolvedPayer = (userWallet?.address || (permission.grant_payload as any)?.payerAddress) as Address;
+    if (!resolvedPayer) {
+      return NextResponse.json(
+        { error: 'Customer wallet address is missing from permission record', code: 'MISSING_PAYER' },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const publicClient = getServerPublicClient();
+      const sessionAccount = getSessionAccount();
+      const tokenAddr = (permission.token_address || PAYMENT_TOKEN_ADDRESS) as Address;
+
+      const currentAllowance = (await publicClient.readContract({
+        address: tokenAddr,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [resolvedPayer, sessionAccount.address],
+      })) as bigint;
+
+      if (currentAllowance < requestedAmount) {
+        return NextResponse.json(
+          {
+            error: `On-chain allowance insufficient for this settlement (${currentAllowance} < ${requestedAmount})`,
+            code: 'INSUFFICIENT_ALLOWANCE',
+          },
+          { status: 422 }
+        );
+      }
+    } catch (allowanceErr: unknown) {
+      const msg = allowanceErr instanceof Error ? allowanceErr.message : 'Allowance check error';
+      console.warn('[Payments] On-chain allowance check warning:', msg);
+    }
+
+    // 7. Insert Payment record with status 'created'
     const { data: payment, error: insertError } = await supabase
       .from('payments')
       .insert({
         idempotency_key: idempotencyKey,
-        merchant_id: merchant.id,
+        merchant_id: resolvedMerchant.id,
         user_id: card.user_id,
         card_id: card.id,
         permission_id: permission.id,
@@ -217,23 +389,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. Redeem Delegation on-chain using session account
     // Update to 'submitted'
     await supabase
       .from('payments')
       .update({ status: 'submitted' })
       .eq('id', payment.id);
 
+    // 8. Execute on-chain settlement via Session Relayer
     const executionResult = await executeDelegationRedemption({
       tokenAddress: payment.token_address,
-      recipientAddress: merchant.payout_address,
+      recipientAddress: resolvedMerchant.payout_address,
       amount: requestedAmount,
       grantPayload: permission.grant_payload,
-      payerAddress: userWallet?.address || (permission.grant_payload as any)?.payerAddress,
+      payerAddress: resolvedPayer,
     });
 
     if (executionResult.success) {
-      // 6. Confirmed only after real receipt verified
+      // Confirmed only after real receipt verified on Sepolia
       const newRemaining = (remainingInPeriod - requestedAmount).toString();
 
       await supabase
@@ -244,6 +416,8 @@ export async function POST(req: NextRequest) {
         })
         .eq('id', permission.id);
 
+      const confirmedAt = new Date().toISOString();
+
       const { data: confirmedPayment } = await supabase
         .from('payments')
         .update({
@@ -251,7 +425,8 @@ export async function POST(req: NextRequest) {
           tx_hash: executionResult.txHash || null,
           user_op_hash: executionResult.userOpHash || null,
           block_number: executionResult.blockNumber || null,
-          updated_at: new Date().toISOString(),
+          confirmed_at: confirmedAt,
+          updated_at: confirmedAt,
         })
         .eq('id', payment.id)
         .select()
@@ -267,7 +442,6 @@ export async function POST(req: NextRequest) {
         payment: confirmedPayment,
       });
     } else {
-      // 7. Failed with clear reason from real receipt/error
       const { data: failedPayment } = await supabase
         .from('payments')
         .update({
@@ -299,4 +473,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

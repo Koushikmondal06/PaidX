@@ -36,6 +36,9 @@ export function createServerSupabaseClient() {
   const secretKey = process.env.SUPABASE_SECRET_KEY || 'sb_secret_placeholder_for_build';
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
+    if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL && !process.env.DATABASE_URL_UNPOOLED) {
+      throw new Error('[Supabase Server] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY in production.');
+    }
     if (process.env.NODE_ENV === 'development') {
       console.warn('[Supabase Server] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY');
     }

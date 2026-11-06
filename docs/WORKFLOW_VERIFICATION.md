@@ -1,12 +1,13 @@
 # PaidX End-to-End Workflow Verification Guide
 
-> **Branch**: `feat/pos-workflow`  
+> **Branch**: `fix/playtest-p0`  
 > **Network**: Ethereum Sepolia (`11155111`)  
 > **Target USDC**: Circle Sepolia Native USDC (`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`)  
 > **Merchant Payout Address**: `0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6`  
 > **CardRegistry Contract**: `0x7cBD8DE77C16Ba79A1fe10E30913517845D68e51`  
 > **MerchantRegistry Contract**: `0xb11dAE79F1B187E95CB93655A983D6e86E574145`  
 > **Backend Session Relayer**: `0x08AC38a8655a8Cb9841582CEa092df0F65fF0009`  
+> **POS Device**: Terminal `#001` (PSK: `psk_d6187915992b28f7acaf227169a211072b92a0d2b1989168`)  
 
 ---
 

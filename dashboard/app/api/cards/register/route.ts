@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { computeCardUidHash } from '@/lib/server/cardHash';
 import { getServerPublicClient } from '@/lib/chain';
-import type { Hash } from 'viem';
+import { CARD_REGISTRY_ABI, getCardRegistryAddress } from '@/lib/contracts';
+import { parseEventLogs, type Hash, type Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,17 +42,28 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServerSupabaseClient();
 
-    // Check if card with this hash already registered
+    // 1. Fetch user's primary wallet_id to avoid NOT NULL violation
+    const { data: primaryWallet } = await supabase
+      .from('wallets')
+      .select('id, address')
+      .eq('user_id', user.id)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const walletId = primaryWallet?.id || null;
+
+    // 2. Check if card with this hash already registered
     const { data: existing } = await supabase
       .from('cards')
-      .select('id, user_id, status')
+      .select('id, user_id, status, registration_tx_hash')
       .eq('uid_hash', uidHash)
       .maybeSingle();
 
     if (existing) {
       if (existing.user_id !== user.id) {
         return NextResponse.json(
-          { error: 'Card UID is already registered to another account' },
+          { error: 'Card UID is already registered to another account', code: 'CARD_ALREADY_REGISTERED' },
           { status: 409 }
         );
       }
@@ -63,34 +75,80 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Determine card status: active ONLY if on-chain receipt is verified
+    // 3. Determine card status: active ONLY if on-chain receipt log OR on-chain storage confirms it
     let cardStatus: 'pending' | 'active' = 'pending';
+    const publicClient = getServerPublicClient();
+    const registryAddress = (getCardRegistryAddress() as Address).toLowerCase() as Address;
+
+    // Check receipt logs if txHash provided
     if (registrationTxHash) {
       try {
-        const publicClient = getServerPublicClient();
         const receipt = await publicClient.waitForTransactionReceipt({
           hash: registrationTxHash as Hash,
           confirmations: 1,
           timeout: 60_000,
         });
+
         if (receipt.status === 'success') {
-          cardStatus = 'active';
+          const logs = parseEventLogs({
+            abi: CARD_REGISTRY_ABI,
+            eventName: 'CardRegistered',
+            logs: receipt.logs,
+          });
+
+          const matchingLog = logs.find(
+            (l) =>
+              l.address.toLowerCase() === registryAddress &&
+              (l.args as any)?.cardHash?.toLowerCase() === uidHash.toLowerCase()
+          );
+
+          if (matchingLog) {
+            cardStatus = 'active';
+          }
         }
       } catch (receiptErr) {
-        console.warn('[Card Register] On-chain receipt verification notice:', receiptErr);
+        console.warn('[Card Register] Receipt verification warning:', receiptErr);
       }
     }
 
-    // Insert or update card record
+    // Check on-chain CardRegistry directly to handle retry paths where tx already succeeded
+    if (cardStatus !== 'active') {
+      try {
+        const cardRecord = (await publicClient.readContract({
+          address: registryAddress,
+          abi: CARD_REGISTRY_ABI,
+          functionName: 'cards',
+          args: [uidHash as `0x${string}`],
+        })) as [Address, number, bigint, bigint];
+
+        const [ownerAddr, onChainStatus] = cardRecord;
+        if (
+          ownerAddr &&
+          ownerAddr !== '0x0000000000000000000000000000000000000000' &&
+          primaryWallet?.address &&
+          ownerAddr.toLowerCase() === primaryWallet.address.toLowerCase()
+        ) {
+          cardStatus = onChainStatus === 1 ? 'active' : 'pending';
+        }
+      } catch (readErr) {
+        console.warn('[Card Register] On-chain read warning:', readErr);
+      }
+    }
+
+    // 4. Insert or update card record
     const { data: card, error: insertError } = await supabase
       .from('cards')
-      .upsert({
-        user_id: user.id,
-        uid_hash: uidHash,
-        status: cardStatus,
-        registration_tx_hash: registrationTxHash || null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'uid_hash' })
+      .upsert(
+        {
+          user_id: user.id,
+          wallet_id: walletId,
+          uid_hash: uidHash,
+          status: cardStatus,
+          registration_tx_hash: registrationTxHash || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'uid_hash' }
+      )
       .select()
       .single();
 
@@ -104,4 +162,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-

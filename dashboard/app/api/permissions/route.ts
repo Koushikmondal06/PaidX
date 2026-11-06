@@ -3,7 +3,8 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CHAIN_ID, PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
 import { getServerPublicClient } from '@/lib/chain';
 import { getOfficial7702DeleGatorAddress } from '@/lib/eip7702';
-import type { Address } from 'viem';
+import { getSessionAccountAddress } from '@/lib/server/sessionAccount';
+import { isAddress, type Address, type Hash } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,11 +39,40 @@ export async function POST(req: NextRequest) {
       grantPayload,
     } = body;
 
+    // Validate parameters
     if (!walletId || !sessionAccountAddress || !limitAmount || !periodSeconds || !validUntil) {
       return NextResponse.json(
-        { error: 'Missing required permission parameters' },
+        { error: 'Missing required permission parameters', code: 'MISSING_PARAMS' },
         { status: 400 }
       );
+    }
+
+    const periodSec = Number(periodSeconds);
+    if (isNaN(periodSec) || periodSec <= 0) {
+      return NextResponse.json({ error: 'periodSeconds must be a positive integer', code: 'INVALID_PERIOD' }, { status: 400 });
+    }
+
+    try {
+      const amt = BigInt(limitAmount);
+      if (amt <= 0n) throw new Error();
+    } catch {
+      return NextResponse.json({ error: 'limitAmount must be a positive integer string', code: 'INVALID_AMOUNT' }, { status: 400 });
+    }
+
+    const expectedSession = getSessionAccountAddress();
+    if (expectedSession && sessionAccountAddress.toLowerCase() !== expectedSession.toLowerCase()) {
+      return NextResponse.json({ error: 'Mismatched session account address', code: 'INVALID_SESSION_ACCOUNT' }, { status: 400 });
+    }
+
+    const expectedToken = PAYMENT_TOKEN_ADDRESS.toLowerCase();
+    const providedToken = (tokenAddress || PAYMENT_TOKEN_ADDRESS).toLowerCase();
+    if (providedToken !== expectedToken) {
+      return NextResponse.json({ error: 'Unsupported token address. Only official Sepolia USDC is accepted.', code: 'UNSUPPORTED_TOKEN' }, { status: 400 });
+    }
+
+    const validUntilDate = new Date(validUntil);
+    if (isNaN(validUntilDate.getTime()) || validUntilDate <= new Date()) {
+      return NextResponse.json({ error: 'validUntil must be a valid timestamp in the future', code: 'INVALID_EXPIRY' }, { status: 400 });
     }
 
     const supabase = createServerSupabaseClient();
@@ -57,30 +87,34 @@ export async function POST(req: NextRequest) {
 
     if (walletError || !wallet) {
       return NextResponse.json(
-        { error: 'Wallet not found or not owned by user' },
+        { error: 'Wallet not found or not owned by user', code: 'WALLET_NOT_FOUND' },
         { status: 403 }
       );
     }
 
-    // Authoritative server-side verification of smart account upgrade status
-    try {
-      if (wallet.address) {
+    // Verify on-chain approval receipt if provided
+    if (grantPayload?.approvalTxHash) {
+      try {
         const publicClient = getServerPublicClient();
-        const code = await publicClient.getCode({ address: wallet.address as Address });
-        if (code && code.toLowerCase().startsWith('0xef0100') && code.length >= 48) {
-          const delegate = `0x${code.substring(8, 48)}`.toLowerCase();
-          const official = getOfficial7702DeleGatorAddress(CHAIN_ID).toLowerCase();
-          if (delegate === official) {
-            await supabase
-              .from('wallets')
-              .update({ smart_account_upgraded: true, kind: 'metamask_smart_account' })
-              .eq('id', wallet.id);
-          }
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: grantPayload.approvalTxHash as Hash,
+          confirmations: 1,
+          timeout: 60_000,
+        });
+        if (receipt.status !== 'success') {
+          return NextResponse.json({ error: 'On-chain allowance transaction reverted on Sepolia', code: 'APPROVAL_REVERTED' }, { status: 400 });
         }
+      } catch (receiptErr) {
+        console.warn('[Permissions] Allowance receipt verification notice:', receiptErr);
       }
-    } catch (checkErr) {
-      console.warn('[Permissions] Server upgrade verification notice:', checkErr);
     }
+
+    // Supersede any existing active permissions for this user
+    await supabase
+      .from('permissions')
+      .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+      .eq('user_id', user.id)
+      .eq('status', 'active');
 
     // Insert active permission record
     const { data: permission, error: insertError } = await supabase
@@ -90,9 +124,9 @@ export async function POST(req: NextRequest) {
         wallet_id: wallet.id,
         chain_id: wallet.chain_id || CHAIN_ID,
         session_account_address: sessionAccountAddress.toLowerCase(),
-        token_address: (tokenAddress || PAYMENT_TOKEN_ADDRESS).toLowerCase(),
+        token_address: providedToken,
         permission_type: 'erc20_periodic',
-        period_seconds: Number(periodSeconds),
+        period_seconds: periodSec,
         limit_per_period: limitAmount.toString(),
         remaining_in_period: limitAmount.toString(),
         current_period_start: new Date().toISOString(),
@@ -114,4 +148,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-

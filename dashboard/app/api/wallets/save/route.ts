@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getServerPublicClient, CHAIN_ID } from '@/lib/chain';
 import { getOfficial7702DeleGatorAddress } from '@/lib/eip7702';
-import { isAddress, type Address } from 'viem';
+import { isAddress, verifyMessage, type Address, type Hex } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,13 +25,52 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { address } = await req.json();
+    const { address, signature, challenge } = await req.json();
 
     if (!address || !isAddress(address)) {
       return NextResponse.json({ error: 'Invalid or missing Ethereum address' }, { status: 400 });
     }
 
     const targetAddress = address.toLowerCase() as Address;
+
+    // Optional / verified EIP-191 ownership proof check
+    if (signature && challenge) {
+      try {
+        const isValid = await verifyMessage({
+          address: targetAddress,
+          message: challenge,
+          signature: signature as Hex,
+        });
+
+        if (!isValid) {
+          return NextResponse.json(
+            { error: 'Invalid wallet ownership signature', code: 'INVALID_SIGNATURE' },
+            { status: 401 }
+          );
+        }
+      } catch (sigErr) {
+        return NextResponse.json(
+          { error: 'Signature verification failed', code: 'INVALID_SIGNATURE' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const supabase = createServerSupabaseClient();
+
+    // Cross-user claim protection: 409 if address belongs to another user
+    const { data: existingWallet } = await supabase
+      .from('wallets')
+      .select('id, user_id, address')
+      .eq('address', targetAddress)
+      .maybeSingle();
+
+    if (existingWallet && existingWallet.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'This wallet address is already linked to another user account', code: 'WALLET_CONFLICT' },
+        { status: 409 }
+      );
+    }
 
     // Authoritative server-side bytecode check using RPC_URL_SERVER
     let isUpgraded = false;
@@ -56,12 +95,16 @@ export async function POST(req: NextRequest) {
       }
     } catch (rpcErr: unknown) {
       console.warn('[Server Wallet Bytecode Notice]:', rpcErr);
-      // If RPC fails, do not trust client value; default to false
       isUpgraded = false;
     }
 
-    const supabase = createServerSupabaseClient();
+    // Demote any existing primary wallets for this user first
+    await supabase
+      .from('wallets')
+      .update({ is_primary: false })
+      .eq('user_id', user.id);
 
+    // Upsert target wallet as primary
     const { data: wallet, error: dbError } = await supabase
       .from('wallets')
       .upsert(
@@ -93,4 +136,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-

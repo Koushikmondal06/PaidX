@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getServerPublicClient } from '@/lib/chain';
+import { MERCHANT_REGISTRY_ABI, getMerchantRegistryAddress } from '@/lib/contracts';
+import { parseEventLogs, type Hash, type Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,11 +68,65 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = createServerSupabaseClient();
+
+    // Verify merchant exists
+    const { data: existingMerchant } = await supabase
+      .from('merchants')
+      .select('*')
+      .eq('id', merchantId)
+      .maybeSingle();
+
+    if (!existingMerchant) {
+      return NextResponse.json({ error: 'Merchant not found', code: 'MERCHANT_NOT_FOUND' }, { status: 404 });
+    }
+
+    // Verify on-chain registration receipt if activating via txHash
+    if (status === 'active' && txHash) {
+      try {
+        const publicClient = getServerPublicClient();
+        const registryAddress = (getMerchantRegistryAddress() as Address).toLowerCase() as Address;
+
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: txHash as Hash,
+          confirmations: 1,
+          timeout: 60_000,
+        });
+
+        if (receipt.status !== 'success') {
+          return NextResponse.json(
+            { error: 'Merchant registration transaction reverted on Sepolia', code: 'TRANSACTION_REVERTED' },
+            { status: 400 }
+          );
+        }
+
+        const logs = parseEventLogs({
+          abi: MERCHANT_REGISTRY_ABI,
+          eventName: 'MerchantRegistered',
+          logs: receipt.logs,
+        });
+
+        const matchingLog = logs.find((l) => l.address.toLowerCase() === registryAddress);
+        if (!matchingLog) {
+          return NextResponse.json(
+            {
+              error: 'Receipt does not contain MerchantRegistered event from MerchantRegistry',
+              code: 'INVALID_RECEIPT',
+            },
+            { status: 400 }
+          );
+        }
+      } catch (receiptErr: unknown) {
+        const msg = receiptErr instanceof Error ? receiptErr.message : 'On-chain verification error';
+        return NextResponse.json({ error: msg, code: 'RECEIPT_VERIFICATION_FAILED' }, { status: 400 });
+      }
+    }
+
     const { data: merchant, error } = await supabase
       .from('merchants')
       .update({
         status,
-        register_tx_hash: txHash || undefined,
+        register_tx_hash: txHash || existingMerchant.register_tx_hash,
+        registration_tx_hash: txHash || existingMerchant.register_tx_hash,
         updated_at: new Date().toISOString(),
       })
       .eq('id', merchantId)
@@ -86,4 +143,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-

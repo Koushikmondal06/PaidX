@@ -1,7 +1,8 @@
 import { http, fallback, createPublicClient, createWalletClient, custom, type Address } from 'viem';
 import { sepolia } from 'viem/chains';
+import { PAYMENT_TOKEN_ADDRESS } from '@/lib/base';
 
-export { sepolia };
+export { sepolia, PAYMENT_TOKEN_ADDRESS };
 
 export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '11155111', 10);
 

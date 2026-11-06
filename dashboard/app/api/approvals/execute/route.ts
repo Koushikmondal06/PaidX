@@ -10,8 +10,8 @@ export const dynamic = 'force-dynamic';
  * POST /api/approvals/execute
  * Executes an approved payment request on behalf of the authorized wallet.
  * Strictly requires status === 'approved'.
- * Rejects execution of unapproved 'approval_required' records.
- * Uses the exact existing payment record and preserves original payment intent.
+ * Guards against double execution by transitioning approved -> submitting atomically.
+ * Returns 502/400 when execution fails.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -38,7 +38,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Payment not found or unauthorized' }, { status: 404 });
     }
 
-    // STRICT GUARD: Do not allow execution of an unapproved approval_required record
     if (payment.status === 'approval_required') {
       return NextResponse.json(
         {
@@ -53,6 +52,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: `Payment cannot be executed: current status is "${payment.status}". Expected status: "approved".` },
         { status: 400 }
+      );
+    }
+
+    // Guard: approved -> submitting
+    const { data: locked, error: lockErr } = await supabase
+      .from('agent_payments')
+      .update({ status: 'submitting', updated_at: new Date().toISOString() })
+      .eq('id', payment.id)
+      .eq('status', 'approved')
+      .select()
+      .maybeSingle();
+
+    if (lockErr || !locked) {
+      return NextResponse.json(
+        { error: 'Payment is already being executed or not in approved state.' },
+        { status: 409 }
       );
     }
 
@@ -71,17 +86,14 @@ export async function POST(req: NextRequest) {
       walletAddress: wallet.address,
     };
 
-    // Calculate display amount from atomic units
     const isHbar = payment.asset?.toUpperCase() === 'HBAR' || payment.asset_id === '0.0.0';
     const decimals = isHbar ? 8 : 6;
     const displayAmount = fromAtomicUnits(payment.amount_atomic, decimals);
 
-    // Extract original intent key from scoped idempotency_key
     const originalIntentKey = payment.idempotency_key
       ? payment.idempotency_key.replace(`${agent.id}:`, '')
       : `approved-${payment.id}`;
 
-    // Execute payment reusing existing payment record and preserving original intent
     const result = await orchestrateAgentPayment(agentContext, {
       recipient: payment.recipient,
       amount: displayAmount,
@@ -90,6 +102,10 @@ export async function POST(req: NextRequest) {
       idempotencyKey: originalIntentKey,
       existingPaymentId: payment.id,
     });
+
+    if (!result.success) {
+      return NextResponse.json(result, { status: 502 });
+    }
 
     return NextResponse.json(result);
   } catch (err: unknown) {

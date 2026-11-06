@@ -61,6 +61,11 @@ export default function VirtualTerminalPage() {
 
   const handleCreateCharge = (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedAmount = parseFloat(amount || '0');
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setErrorMessage('Charge amount must be greater than $0.00 USDC.');
+      return;
+    }
     if (!receivingAddress) {
       setErrorMessage('Merchant settlement address is not configured.');
       return;
@@ -108,6 +113,7 @@ export default function VirtualTerminalPage() {
 
       setSettledTxHash(data.payment.tx_hash);
       setSettledBlock(data.payment.block_number);
+      setCardUid('');
       setStatus('confirmed');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Payment settlement failed';
@@ -118,6 +124,7 @@ export default function VirtualTerminalPage() {
 
   const handleReset = () => {
     setStatus('idle');
+    setCardUid('');
     setSettledTxHash(null);
     setSettledBlock(null);
     setErrorMessage(null);
