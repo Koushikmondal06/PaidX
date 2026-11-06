@@ -67,12 +67,12 @@ export default function AuthPage() {
     try {
       if (mode === 'register') {
         if (channel === 'email') {
+          // Explicitly target the production console confirmation landing page
           const redirectUrl =
-            typeof window !== 'undefined' && window.location.origin
-              ? `${window.location.origin}/auth/callback`
-              : (process.env.NEXT_PUBLIC_APP_URL
-                  ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
-                  : 'https://console.paidx.cc/auth/callback');
+            process.env.NEXT_PUBLIC_AUTH_REDIRECT_URL ||
+            (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')
+              ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+              : 'https://console.paidx.cc/auth/callback');
 
           const { data, error: signUpError } = await supabase.auth.signUp({
             email,
