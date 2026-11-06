@@ -11,16 +11,25 @@ export async function POST(req: NextRequest) {
     // 1. Authenticate Merchant
     const merchantIdHeader = req.headers.get('x-merchant-id');
     const authHeader = req.headers.get('authorization');
+    const body = await req.json().catch(() => ({}));
+    const {
+      merchantId: bodyMerchantId,
+      rawCardUid: bodyRawCardUid,
+      cardUid: bodyCardUid,
+      cardUidHash: providedCardUidHash,
+      amount: amountStr,
+      clientSaleId,
+      idempotencyKey: bodyIdempotencyKey,
+    } = body;
+
     const idempotencyKey =
       req.headers.get('idempotency-key') ||
-      req.headers.get('x-idempotency-key');
+      req.headers.get('x-idempotency-key') ||
+      clientSaleId ||
+      bodyIdempotencyKey ||
+      `pos-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    if (!idempotencyKey) {
-      return NextResponse.json(
-        { error: 'Idempotency-Key header is required', code: 'IDEMPOTENCY_KEY_REQUIRED' },
-        { status: 400 }
-      );
-    }
+    const rawCardUid = bodyRawCardUid || bodyCardUid;
 
     const supabase = createServerSupabaseClient();
 
@@ -35,18 +44,12 @@ export async function POST(req: NextRequest) {
       // Idempotent return of existing payment record
       return NextResponse.json({
         success: existingPayment.status === 'confirmed',
+        txHash: existingPayment.tx_hash || null,
+        explorerUrl: existingPayment.tx_hash ? `https://sepolia.etherscan.io/tx/${existingPayment.tx_hash}` : null,
         payment: existingPayment,
         isIdempotentReplay: true,
       });
     }
-
-    const body = await req.json();
-    const {
-      merchantId: bodyMerchantId,
-      rawCardUid,
-      cardUidHash: providedCardUidHash,
-      amount: amountStr,
-    } = body;
 
     const targetMerchantId = merchantIdHeader || bodyMerchantId;
     if (!targetMerchantId) {
@@ -140,7 +143,22 @@ export async function POST(req: NextRequest) {
     }
 
     // Check period limit
-    const requestedAmount = BigInt(amountStr || '0');
+    let requestedAmount: bigint;
+    try {
+      if (typeof amountStr === 'string' && amountStr.includes('.')) {
+        // Parse decimal as USDC (6 decimals)
+        const [whole, frac = ''] = amountStr.split('.');
+        const paddedFrac = frac.padEnd(6, '0').slice(0, 6);
+        requestedAmount = BigInt(whole) * 1_000_000n + BigInt(paddedFrac);
+      } else {
+        requestedAmount = BigInt(amountStr || '0');
+      }
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid amount format', code: 'INVALID_AMOUNT' },
+        { status: 400 }
+      );
+    }
     if (requestedAmount <= 0n) {
       return NextResponse.json(
         { error: 'Payment amount must be greater than zero', code: 'INVALID_AMOUNT' },
@@ -224,8 +242,13 @@ export async function POST(req: NextRequest) {
         .select()
         .single();
 
+      const txHash = executionResult.txHash || confirmedPayment?.tx_hash || null;
+      const explorerUrl = txHash ? `https://sepolia.etherscan.io/tx/${txHash}` : null;
+
       return NextResponse.json({
         success: true,
+        txHash,
+        explorerUrl,
         payment: confirmedPayment,
       });
     } else {
