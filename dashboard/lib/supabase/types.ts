@@ -48,6 +48,11 @@ export type Database = {
           kind: string;
           is_primary: boolean;
           smart_account_upgraded: boolean;
+          network?: string | null;
+          public_key?: string | null;
+          verified?: boolean;
+          verification_metadata?: Record<string, any> | null;
+          evm_address?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -59,6 +64,11 @@ export type Database = {
           kind: string;
           is_primary?: boolean;
           smart_account_upgraded?: boolean;
+          network?: string | null;
+          public_key?: string | null;
+          verified?: boolean;
+          verification_metadata?: Record<string, any> | null;
+          evm_address?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -70,8 +80,58 @@ export type Database = {
           kind?: string;
           is_primary?: boolean;
           smart_account_upgraded?: boolean;
+          network?: string | null;
+          public_key?: string | null;
+          verified?: boolean;
+          verification_metadata?: Record<string, any> | null;
+          evm_address?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      wallet_challenges: {
+        Row: {
+          id: string;
+          user_id: string;
+          wallet_address: string;
+          network: string;
+          chain_id: number;
+          action: string;
+          challenge_text: string;
+          nonce: string;
+          used: boolean;
+          used_at: string | null;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          wallet_address: string;
+          network?: string;
+          chain_id?: number;
+          action?: string;
+          challenge_text: string;
+          nonce: string;
+          used?: boolean;
+          used_at?: string | null;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          wallet_address?: string;
+          network?: string;
+          chain_id?: number;
+          action?: string;
+          challenge_text?: string;
+          nonce?: string;
+          used?: boolean;
+          used_at?: string | null;
+          expires_at?: string;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -323,6 +383,319 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [];
+      };
+      agent_connections: {
+        Row: {
+          id: string;
+          user_id: string;
+          wallet_id: string;
+          agent_name: string;
+          api_key_hash: string;
+          api_key_prefix: string;
+          status: string;
+          revoked_at: string | null;
+          expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          wallet_id: string;
+          agent_name: string;
+          api_key_hash: string;
+          api_key_prefix: string;
+          status?: string;
+          revoked_at?: string | null;
+          expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          wallet_id?: string;
+          agent_name?: string;
+          api_key_hash?: string;
+          api_key_prefix?: string;
+          status?: string;
+          revoked_at?: string | null;
+          expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_connections_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agent_connections_wallet_id_fkey";
+            columns: ["wallet_id"];
+            isOneToOne: false;
+            referencedRelation: "wallets";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      agent_policies: {
+        Row: {
+          id: string;
+          agent_id: string;
+          max_amount_per_tx: string;
+          daily_budget: string;
+          monthly_budget: string;
+          spent_today: string;
+          spent_this_month: string;
+          period_start_date: string;
+          autonomous_payments_enabled: boolean;
+          require_approval_above: string | null;
+          allowed_networks: string[];
+          allowed_assets: string[];
+          allowed_recipients: string[] | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          max_amount_per_tx: string;
+          daily_budget: string;
+          monthly_budget: string;
+          spent_today?: string;
+          spent_this_month?: string;
+          period_start_date?: string;
+          autonomous_payments_enabled?: boolean;
+          require_approval_above?: string | null;
+          allowed_networks?: string[];
+          allowed_assets?: string[];
+          allowed_recipients?: string[] | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          agent_id?: string;
+          max_amount_per_tx?: string;
+          daily_budget?: string;
+          monthly_budget?: string;
+          spent_today?: string;
+          spent_this_month?: string;
+          period_start_date?: string;
+          autonomous_payments_enabled?: boolean;
+          require_approval_above?: string | null;
+          allowed_networks?: string[];
+          allowed_assets?: string[];
+          allowed_recipients?: string[] | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_policies_agent_id_fkey";
+            columns: ["agent_id"];
+            isOneToOne: true;
+            referencedRelation: "agent_connections";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      agent_spending_reservations: {
+        Row: {
+          id: string;
+          agent_id: string;
+          idempotency_key: string;
+          amount: string;
+          asset: string;
+          network: string;
+          recipient: string;
+          status: string;
+          release_reason: string | null;
+          expires_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          idempotency_key: string;
+          amount: string;
+          asset: string;
+          network: string;
+          recipient: string;
+          status?: string;
+          release_reason?: string | null;
+          expires_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          agent_id?: string;
+          idempotency_key?: string;
+          amount?: string;
+          asset?: string;
+          network?: string;
+          recipient?: string;
+          status?: string;
+          release_reason?: string | null;
+          expires_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_spending_reservations_agent_id_fkey";
+            columns: ["agent_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_connections";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      agent_payments: {
+        Row: {
+          id: string;
+          agent_id: string;
+          user_id: string;
+          wallet_id: string;
+          reservation_id: string | null;
+          recipient: string;
+          amount_atomic: string;
+          amount_display: string;
+          asset: string;
+          asset_id: string;
+          network: string;
+          payment_scheme: string;
+          status: string;
+          idempotency_key: string;
+          tx_id: string | null;
+          hashscan_url: string | null;
+          hcs_topic_id: string | null;
+          hcs_sequence_number: number | null;
+          hcs_status: string;
+          failure_reason: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          user_id: string;
+          wallet_id: string;
+          reservation_id?: string | null;
+          recipient: string;
+          amount_atomic: string;
+          amount_display: string;
+          asset: string;
+          asset_id: string;
+          network?: string;
+          payment_scheme?: string;
+          status?: string;
+          idempotency_key: string;
+          tx_id?: string | null;
+          hashscan_url?: string | null;
+          hcs_topic_id?: string | null;
+          hcs_sequence_number?: number | null;
+          hcs_status?: string;
+          failure_reason?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          agent_id?: string;
+          user_id?: string;
+          wallet_id?: string;
+          reservation_id?: string | null;
+          recipient?: string;
+          amount_atomic?: string;
+          amount_display?: string;
+          asset?: string;
+          asset_id?: string;
+          network?: string;
+          payment_scheme?: string;
+          status?: string;
+          idempotency_key?: string;
+          tx_id?: string | null;
+          hashscan_url?: string | null;
+          hcs_topic_id?: string | null;
+          hcs_sequence_number?: number | null;
+          hcs_status?: string;
+          failure_reason?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_payments_agent_id_fkey";
+            columns: ["agent_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_connections";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agent_payments_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agent_payments_wallet_id_fkey";
+            columns: ["wallet_id"];
+            isOneToOne: false;
+            referencedRelation: "wallets";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      hcs_audit_events: {
+        Row: {
+          id: string;
+          payment_id: string | null;
+          topic_id: string;
+          sequence_number: number | null;
+          event_type: string;
+          payload: Json;
+          running_hash: string | null;
+          published_at: string;
+        };
+        Insert: {
+          id?: string;
+          payment_id?: string | null;
+          topic_id: string;
+          sequence_number?: number | null;
+          event_type: string;
+          payload?: Json;
+          running_hash?: string | null;
+          published_at?: string;
+        };
+        Update: {
+          id?: string;
+          payment_id?: string | null;
+          topic_id?: string;
+          sequence_number?: number | null;
+          event_type?: string;
+          payload?: Json;
+          running_hash?: string | null;
+          published_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "hcs_audit_events_payment_id_fkey";
+            columns: ["payment_id"];
+            isOneToOne: false;
+            referencedRelation: "agent_payments";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
     Views: {
