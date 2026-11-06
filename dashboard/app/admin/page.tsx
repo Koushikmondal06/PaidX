@@ -183,7 +183,7 @@ export default function AdminDashboardPage() {
       if (!connectedAddress) {
         throw new Error('MetaMask admin wallet is not connected.');
       }
-      const walletClient = getBrowserWalletClient(connectedAddress);
+      const walletClient = await getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getMerchantRegistryAddress() as Address;
 
@@ -250,7 +250,7 @@ export default function AdminDashboardPage() {
       if (!connectedAddress) {
         throw new Error('MetaMask admin wallet is not connected.');
       }
-      const walletClient = getBrowserWalletClient(connectedAddress);
+      const walletClient = await getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getMerchantRegistryAddress() as Address;
 
