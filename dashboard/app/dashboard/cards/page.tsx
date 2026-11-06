@@ -148,7 +148,7 @@ export default function CardsAndLimitsPage() {
         throw new Error('No wallet address linked to current account.');
       }
 
-      const walletClient = getBrowserWalletClient(userAddress);
+      const walletClient = await getBrowserWalletClient(userAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getCardRegistryAddress() as Address;
 
@@ -232,7 +232,7 @@ export default function CardsAndLimitsPage() {
       if (card.registration_tx_hash && typeof window !== 'undefined' && window.ethereum) {
         const userAddress = (session?.smartAccountAddress || session?.eoaAddress) as Address;
         if (userAddress) {
-          const walletClient = getBrowserWalletClient(userAddress);
+          const walletClient = await getBrowserWalletClient(userAddress);
           const publicClient = getBrowserPublicClient();
           const registryAddress = getCardRegistryAddress() as Address;
 

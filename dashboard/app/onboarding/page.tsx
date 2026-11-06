@@ -329,7 +329,7 @@ export default function OnboardingPage() {
       const validUntil = new Date(Date.now() + totalValiditySec * 1000).toISOString();
 
       // Sign on-chain allowance approval for Session Relayer via MetaMask
-      const walletClient = getBrowserWalletClient(connectedAddress);
+      const walletClient = await getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
 
       const approvalTx = await walletClient.writeContract({
@@ -420,7 +420,7 @@ export default function OnboardingPage() {
 
       // 2. Check if already registered on-chain
       let txHash: Hex | undefined;
-      const walletClient = getBrowserWalletClient(connectedAddress);
+      const walletClient = await getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getCardRegistryAddress() as Address;
 
