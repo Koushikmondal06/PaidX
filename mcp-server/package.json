@@ -2,7 +2,6 @@
   "name": "paidx-mcp-server",
   "version": "1.0.0",
   "description": "PaidX Dedicated Remote MCP Server for Hedera x402 Conversational Wallet Payments",
-  "main": "dist/index.js",
   "scripts": {
     "build": "tsc && npm run bundle",
     "bundle": "esbuild src/api-mcp.ts --bundle --platform=node --target=node18 --outfile=api/mcp.js && esbuild src/api-index.ts --bundle --platform=node --target=node18 --outfile=api/index.js",
