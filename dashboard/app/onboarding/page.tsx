@@ -13,7 +13,7 @@ import { PAYMENT_TOKEN_ADDRESS, truncateAddress, getExplorerTxUrl } from '@/lib/
 import { getBrowserPublicClient, getBrowserWalletClient, CHAIN_ID } from '@/lib/chain';
 import { getUpgradeStatus, checkWalletCapabilities, triggerSmartAccountUpgrade, UpgradeStatusResult } from '@/lib/eip7702';
 import { getCardRegistryAddress, CARD_REGISTRY_ABI, ERC20_ABI } from '@/lib/contracts';
-import { isAddress, type Address, type Hash } from 'viem';
+import { isAddress, parseUnits, type Address, type Hash, type Hex } from 'viem';
 import {
   Wallet,
   CreditCard,
@@ -693,7 +693,7 @@ export default function OnboardingPage() {
               <div className="flex justify-between items-center">
                 <span className="text-[#AAAAAA]">Account Status:</span>
                 <Badge variant={upgradeStatus.status === 'upgraded' ? 'active' : 'warning'}>
-                  {upgradeStatus.status === 'upgraded' ? 'MetaMask Smart Account' : upgradeStatus.status === 'unsupported' ? 'Delegated (Foreign)' : 'EOA'}
+                  {upgradeStatus.status === 'upgraded' ? 'MetaMask Smart Account' : upgradeStatus.isForeignDelegation ? 'Delegated (Foreign)' : 'EOA'}
                 </Badge>
               </div>
               {upgradeStatus.warning && (
