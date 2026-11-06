@@ -7,8 +7,14 @@ import {
   TransactionId,
 } from '@hiero-ledger/sdk';
 import { getHederaClient } from './client';
-import { getMirrorAccountBalance, getMirrorTokenInfo } from './mirrorNode';
+import { getMirrorAccountBalance } from './mirrorNode';
 import { SUPPORTED_HEDERA_ASSETS, type HtsTokenConfig } from './types';
+import {
+  parseToAtomicUnits,
+  formatAtomicUnits,
+  validateDecimalString,
+  isValidHederaTokenId,
+} from './decimal';
 
 /**
  * Returns supported HTS asset configuration
@@ -19,33 +25,38 @@ export function getHtsAssetConfig(assetSymbolOrId: string): HtsTokenConfig {
     return SUPPORTED_HEDERA_ASSETS[upper];
   }
 
-  // Check if direct token ID provided
+  // Check by Token ID
+  for (const asset of Object.values(SUPPORTED_HEDERA_ASSETS)) {
+    if (asset.tokenId === assetSymbolOrId.trim()) {
+      return asset;
+    }
+  }
+
+  if (!isValidHederaTokenId(assetSymbolOrId)) {
+    throw new Error(`Invalid Hedera asset identifier: "${assetSymbolOrId}"`);
+  }
+
   return {
-    tokenId: assetSymbolOrId,
-    symbol: assetSymbolOrId,
-    name: `Hedera Token ${assetSymbolOrId}`,
+    tokenId: assetSymbolOrId.trim(),
+    symbol: assetSymbolOrId.trim(),
+    name: `Hedera Token ${assetSymbolOrId.trim()}`,
     decimals: 6,
   };
 }
 
 /**
- * Converts human readable amount (e.g. "5" or "5.5") to atomic integer string for the given token decimals
+ * Converts decimal amount string to atomic BigInt integer string
  */
 export function toAtomicUnits(amountStr: string | number, decimals: number): string {
-  const [whole, fraction = ''] = amountStr.toString().split('.');
-  const paddedFraction = fraction.padEnd(decimals, '0').slice(0, decimals);
-  const combined = `${whole}${paddedFraction}`.replace(/^0+/, '');
-  return combined === '' ? '0' : combined;
+  const str = typeof amountStr === 'number' ? amountStr.toString() : amountStr;
+  return parseToAtomicUnits(str, decimals).toString();
 }
 
 /**
- * Converts atomic integer units to formatted human-readable display string
+ * Converts atomic integer units to formatted decimal string
  */
 export function fromAtomicUnits(atomicStr: string | bigint | number, decimals: number): string {
-  const str = atomicStr.toString().padStart(decimals + 1, '0');
-  const whole = str.slice(0, str.length - decimals);
-  const fraction = str.slice(str.length - decimals).replace(/0+$/, '');
-  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
+  return formatAtomicUnits(atomicStr.toString(), decimals);
 }
 
 /**
@@ -77,7 +88,7 @@ export async function getAccountBalances(accountId: string): Promise<{
 }
 
 /**
- * Constructs an HTS TransferTransaction for Hedera x402 payment
+ * Constructs an HTS or HBAR TransferTransaction for Hedera x402 payment
  */
 export function buildTransferTransaction({
   payerAccountId,
@@ -99,28 +110,28 @@ export function buildTransferTransaction({
   const recipient = AccountId.fromString(recipientAccountId.trim());
   const amountBigInt = BigInt(atomicAmount);
 
-  if (assetId === '0.0.0' || assetId.toLowerCase() === 'hbar') {
-    // Native HBAR transfer
-    const amountHbar = Hbar.fromTinybars(amountBigInt.toString());
-    const negAmountHbar = Hbar.fromTinybars((-amountBigInt).toString());
+  if (amountBigInt <= 0n) {
+    throw new Error(`Transfer atomic amount must be strictly positive. Received: ${amountBigInt.toString()}`);
+  }
 
-    tx.addHbarTransfer(payer, negAmountHbar)
-      .addHbarTransfer(recipient, amountHbar);
+  // Set explicit transaction ID with payer account
+  tx.setTransactionId(TransactionId.generate(payer));
+
+  // Determine native HBAR vs HTS Token
+  const isHbar = assetId.trim() === '0.0.0' || assetId.trim().toUpperCase() === 'HBAR';
+
+  if (isHbar) {
+    const tinybars = amountBigInt;
+    tx.addHbarTransfer(payer, Hbar.fromTinybars((-tinybars).toString()));
+    tx.addHbarTransfer(recipient, Hbar.fromTinybars(tinybars.toString()));
   } else {
-    // HTS Fungible Token transfer (e.g. USDC)
     const token = TokenId.fromString(assetId.trim());
-    tx.addTokenTransfer(token, payer, -Number(amountBigInt))
-      .addTokenTransfer(token, recipient, Number(amountBigInt));
+    tx.addTokenTransfer(token, payer, -amountBigInt);
+    tx.addTokenTransfer(token, recipient, amountBigInt);
   }
 
-  // Set designated fee payer (the x402 Facilitator sponsoring the gas fees)
-  if (feePayerAccountId && feePayerAccountId.trim().startsWith('0.0.')) {
-    const feePayer = AccountId.fromString(feePayerAccountId.trim());
-    tx.setTransactionId(TransactionId.generate(feePayer));
-  } else {
-    tx.setTransactionId(TransactionId.generate(payer));
-  }
-
+  // Freeze transaction with client so bytes can be serialized and signed
   tx.freezeWith(client);
+
   return tx;
 }
