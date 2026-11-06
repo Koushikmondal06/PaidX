@@ -87,7 +87,7 @@ export async function getRealUserSession(): Promise<UserSession | null> {
   const { data: merchant } = await supabase
     .from('merchants')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('owner_user_id', user.id)
     .maybeSingle();
 
   const identifier = user.email || user.phone || '';
@@ -115,10 +115,10 @@ export async function getRealUserSession(): Promise<UserSession | null> {
     merchantProfile: merchant
       ? {
           id: merchant.id,
-          businessName: merchant.business_name,
-          slug: merchant.slug,
+          businessName: merchant.name,
+          slug: merchant.slug || '',
           receivingAddress: merchant.payout_address,
-          isActive: merchant.is_active,
+          isActive: Boolean(merchant.is_active || merchant.status === 'active'),
         }
       : undefined,
   };

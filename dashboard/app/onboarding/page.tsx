@@ -333,11 +333,12 @@ export default function OnboardingPage() {
       const cardHash = prepData.uidHash as `0x${string}`;
 
       // 2. Sign registerCard in MetaMask
-      const walletClient = getBrowserWalletClient();
+      const walletClient = getBrowserWalletClient(connectedAddress);
       const publicClient = getBrowserPublicClient();
       const registryAddress = getCardRegistryAddress() as Address;
 
       const txHash = await walletClient.writeContract({
+        account: connectedAddress,
         address: registryAddress,
         abi: CARD_REGISTRY_ABI,
         functionName: 'registerCard',

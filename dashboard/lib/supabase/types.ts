@@ -234,37 +234,37 @@ export type Database = {
       merchants: {
         Row: {
           id: string;
-          user_id: string;
-          business_name: string;
-          slug: string;
+          owner_user_id: string;
+          name: string;
+          slug: string | null;
           payout_address: string;
-          chain_id: number;
-          is_active: boolean;
-          registration_tx_hash: string | null;
+          status: string;
+          is_active?: boolean;
+          register_tx_hash: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          user_id: string;
-          business_name: string;
-          slug: string;
+          owner_user_id: string;
+          name: string;
+          slug?: string | null;
           payout_address: string;
-          chain_id: number;
+          status?: string;
           is_active?: boolean;
-          registration_tx_hash?: string | null;
+          register_tx_hash?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
-          user_id?: string;
-          business_name?: string;
-          slug?: string;
+          owner_user_id?: string;
+          name?: string;
+          slug?: string | null;
           payout_address?: string;
-          chain_id?: number;
+          status?: string;
           is_active?: boolean;
-          registration_tx_hash?: string | null;
+          register_tx_hash?: string | null;
           created_at?: string;
           updated_at?: string;
         };
