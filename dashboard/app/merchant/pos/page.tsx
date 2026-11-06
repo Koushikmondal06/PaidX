@@ -65,6 +65,12 @@ export default function PosHardwarePage() {
     setProvisionedSecret({ uuid: newUuid, secret: newSecret });
   };
 
+  const handleRevokeDevice = (deviceId: string) => {
+    setDevices((prev) =>
+      prev.map((d) => (d.id === deviceId ? { ...d, status: 'revoked' as const } : d))
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -128,10 +134,19 @@ export default function PosHardwarePage() {
                 <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
                 <span>NFC & TFT Online</span>
               </div>
-              <Button variant="ghost" size="sm" className="text-rose-400 hover:text-rose-300">
-                <Trash2 className="w-3 h-3 mr-1" />
-                Revoke
-              </Button>
+              {device.status === 'active' ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRevokeDevice(device.id)}
+                  className="text-rose-400 hover:text-rose-300 font-mono text-xs"
+                >
+                  <Trash2 className="w-3 h-3 mr-1" />
+                  Revoke
+                </Button>
+              ) : (
+                <span className="text-[10px] text-rose-500 font-mono">Terminal Revoked</span>
+              )}
             </div>
           </Card>
         ))}

@@ -270,7 +270,7 @@ export class NeonQueryBuilder {
           const merchantIds = [...new Set(rows.map((r) => r.merchant_id).filter(Boolean))];
           if (merchantIds.length > 0) {
             const merchants = await query(
-              `SELECT id, business_name, payout_address FROM "merchants" WHERE id = ANY($1::uuid[])`,
+              `SELECT id, name, payout_address FROM "merchants" WHERE id = ANY($1::uuid[])`,
               [merchantIds]
             );
             const mtrMap = new Map(merchants.map((m) => [m.id, m]));

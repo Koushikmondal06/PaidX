@@ -15,6 +15,8 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
       const s = (await getRealUserSession()) || getStoredSession();
       if (!s) {
         router.replace('/auth');
+      } else if (s.role !== 'merchant' && !s.merchantProfile) {
+        router.replace('/dashboard');
       } else {
         setSession(s);
         setIsLoading(false);

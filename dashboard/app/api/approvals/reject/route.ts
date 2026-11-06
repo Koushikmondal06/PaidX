@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/approvals/reject
  * Human user rejects a payment request that required approval.
- * Releases any associated budget reservation and marks the payment as declined.
+ * Performs conditional status update first, and releases any associated reservation only on success.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -51,11 +51,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Release any associated spending reservation
-    if (payment.reservation_id) {
-      await releaseFailedReservation(payment.reservation_id, reason || 'Rejected by human approver');
-    }
-
+    // 1. Conditional status update first
     const { data: updated, error: updateError } = await supabase
       .from('agent_payments')
       .update({
@@ -64,11 +60,21 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', paymentId)
+      .in('status', ['approval_required', 'approved'])
       .select()
       .single();
 
     if (updateError || !updated) {
       return NextResponse.json({ error: updateError?.message || 'Failed to reject payment' }, { status: 500 });
+    }
+
+    // 2. Release reservation only on successful status update
+    if (payment.reservation_id) {
+      try {
+        await releaseFailedReservation(payment.reservation_id, reason || 'Rejected by human approver');
+      } catch (relErr) {
+        console.warn('[Approvals Reject] Reservation release warning:', relErr);
+      }
     }
 
     return NextResponse.json({

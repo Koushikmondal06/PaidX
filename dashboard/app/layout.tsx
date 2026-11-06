@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PaidX — Contactless Crypto Payments on Base',
+  title: 'PaidX — Contactless Crypto Payments on Ethereum Sepolia',
   description: 'Non-custodial cryptocurrency payments platform with smart accounts, NFC cards, and hardware POS terminals.',
 };
 
