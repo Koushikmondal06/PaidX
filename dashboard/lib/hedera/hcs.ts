@@ -10,9 +10,24 @@ import type { HcsAuditEvent } from './types';
 
 let cachedTopicId: string | null = null;
 
+// Test mock hook for unit testing
+let testHcsMock: {
+  publish?: (paymentId: string | undefined, event: HcsAuditEvent) => Promise<{
+    success: boolean;
+    topicId: string;
+    sequenceNumber?: number;
+    runningHash?: string;
+    error?: string;
+  }>;
+} | null = null;
+
+export function setTestHcsMock(mock: typeof testHcsMock) {
+  testHcsMock = mock;
+}
+
 /**
  * Returns the configured HCS Topic ID for PaidX Agent Payment Audits.
- * If not configured in HEDERA_HCS_TOPIC_ID, creates a new public audit topic on Hedera Testnet.
+ * Fails closed if not configured and cannot be created. Never substitutes a fake fallback topic.
  */
 export async function getOrCreateAuditTopicId(): Promise<string> {
   if (cachedTopicId) return cachedTopicId;
@@ -23,35 +38,35 @@ export async function getOrCreateAuditTopicId(): Promise<string> {
     return cachedTopicId;
   }
 
-  // Auto-create PaidX Agent Payment Audit Topic on Hedera Testnet
-  const client = getHederaClient();
-  console.log('[HCS] Creating dedicated PaidX Agent Payment Audit Topic on Hedera Testnet...');
+  // Attempt creation if operator credentials are provided
+  if (process.env.HEDERA_OPERATOR_ID && process.env.HEDERA_OPERATOR_KEY) {
+    try {
+      const client = getHederaClient();
+      const tx = new TopicCreateTransaction()
+        .setTopicMemo('PaidX Agent Payment Audit Trail')
+        .freezeWith(client);
 
-  try {
-    const tx = new TopicCreateTransaction()
-      .setTopicMemo('PaidX Agent Payment Audit Trail')
-      .freezeWith(client);
+      const txResponse = await tx.execute(client);
+      const receipt = await txResponse.getReceipt(client);
 
-    const txResponse = await tx.execute(client);
-    const receipt = await txResponse.getReceipt(client);
-
-    if (!receipt.topicId) {
-      throw new Error('Failed to retrieve topicId from receipt');
+      if (receipt.topicId) {
+        cachedTopicId = receipt.topicId.toString();
+        return cachedTopicId;
+      }
+    } catch (err) {
+      console.warn('[HCS] Failed to create topic on Hedera Testnet:', err);
     }
-
-    cachedTopicId = receipt.topicId.toString();
-    console.log(`[HCS] Successfully created PaidX Audit Topic ID: ${cachedTopicId}`);
-    return cachedTopicId;
-  } catch (err) {
-    console.warn('[HCS] Failed to create HCS topic on-chain, using fallback:', err);
-    // Fallback topic if client is in read-only / unauthenticated mode
-    return '0.0.5449200';
   }
+
+  throw new Error(
+    '[HCS Audit Error] HEDERA_HCS_TOPIC_ID is not configured. Audit publication requires a valid Hedera topic.'
+  );
 }
 
 /**
  * Publishes an immutable payment event to the Hedera Consensus Service (HCS).
- * Never fails or rolls back an already confirmed on-chain payment.
+ * Fails gracefully: If publication fails, payment settlement remains preserved,
+ * and the audit status is marked as 'pending_retry'.
  */
 export async function publishHcsPaymentEvent({
   paymentId,
@@ -66,7 +81,34 @@ export async function publishHcsPaymentEvent({
   runningHash?: string;
   error?: string;
 }> {
-  const topicIdStr = await getOrCreateAuditTopicId();
+  if (testHcsMock?.publish) {
+    return testHcsMock.publish(paymentId, event);
+  }
+
+  let topicIdStr = '';
+  try {
+    topicIdStr = await getOrCreateAuditTopicId();
+  } catch (topicErr: unknown) {
+    const errorMsg = topicErr instanceof Error ? topicErr.message : 'Missing HCS Topic';
+
+    // Mark as pending retry in database
+    if (paymentId) {
+      const supabase = createServerSupabaseClient();
+      await supabase
+        .from('agent_payments')
+        .update({
+          hcs_status: 'pending_retry',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', paymentId);
+    }
+
+    return {
+      success: false,
+      topicId: '',
+      error: errorMsg,
+    };
+  }
 
   try {
     const client = getHederaClient();
@@ -83,43 +125,54 @@ export async function publishHcsPaymentEvent({
       ? Number(receipt.topicSequenceNumber.toString())
       : undefined;
 
-    // Record event into Supabase hcs_audit_events table
-    try {
-      const supabase = createServerSupabaseClient();
-      await supabase.from('hcs_audit_events').insert({
-        payment_id: paymentId || null,
-        topic_id: topicIdStr,
-        sequence_number: sequenceNumber || 1,
-        event_type: event.event,
-        payload: event as any,
-      });
-    } catch (dbErr) {
-      console.warn('[HCS] Failed to mirror event to Supabase database:', dbErr);
-    }
+    const runningHash = receipt.topicRunningHash
+      ? Buffer.from(receipt.topicRunningHash).toString('hex')
+      : undefined;
 
-    console.log(`[HCS] Audit event published: topic ${topicIdStr}, sequence #${sequenceNumber}`);
+    // Record verified event into Supabase hcs_audit_events table
+    const supabase = createServerSupabaseClient();
+    await supabase.from('hcs_audit_events').insert({
+      payment_id: paymentId || null,
+      topic_id: topicIdStr,
+      sequence_number: sequenceNumber || 1,
+      event_type: event.event,
+      payload: event as any,
+      running_hash: runningHash,
+    });
+
+    // Update payment record to published
+    if (paymentId) {
+      await supabase
+        .from('agent_payments')
+        .update({
+          hcs_topic_id: topicIdStr,
+          hcs_sequence_number: sequenceNumber || null,
+          hcs_status: 'published',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', paymentId);
+    }
 
     return {
       success: true,
       topicId: topicIdStr,
       sequenceNumber,
+      runningHash,
     };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Unknown HCS error';
-    console.warn(`[HCS] Warning: could not publish message to topic ${topicIdStr}:`, msg);
+    const msg = err instanceof Error ? err.message : 'HCS submit failed';
+    console.warn(`[HCS] Failed to submit message to topic ${topicIdStr}:`, msg);
 
-    // Record fallback audit entry in DB anyway
-    try {
+    // Mark as pending retry in database so payment is preserved
+    if (paymentId) {
       const supabase = createServerSupabaseClient();
-      await supabase.from('hcs_audit_events').insert({
-        payment_id: paymentId || null,
-        topic_id: topicIdStr,
-        sequence_number: 0,
-        event_type: event.event,
-        payload: { ...event, publish_warning: msg } as any,
-      });
-    } catch {
-      // Non-blocking
+      await supabase
+        .from('agent_payments')
+        .update({
+          hcs_status: 'pending_retry',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', paymentId);
     }
 
     return {
