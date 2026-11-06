@@ -70,6 +70,7 @@ export interface MirrorTopicMessage {
 let testMirrorMock: {
   getTransaction?: (txId: string) => Promise<MirrorTransaction | null>;
   getAccount?: (accountId: string) => Promise<MirrorAccount | null>;
+  getAccountByEvmAddress?: (evmAddress: string) => Promise<MirrorAccount | null>;
   getBalance?: (accountId: string) => Promise<MirrorAccountBalance | null>;
   getTopicMessages?: (topicId: string) => Promise<MirrorTopicMessage[]>;
   getTopicMessageBySequence?: (topicId: string, sequenceNumber: number) => Promise<MirrorTopicMessage | null>;
@@ -101,6 +102,54 @@ export async function getMirrorAccount(accountId: string): Promise<MirrorAccount
     console.warn(`[Mirror Node] Failed to fetch account ${accountId}:`, err);
     return null;
   }
+}
+
+/**
+ * Resolve Hedera account info by EVM address (e.g. from MetaMask).
+ * Queries Mirror Node /api/v1/accounts/{evmAddress} with fallback to /api/v1/accounts?account.evm_address={evmAddress}.
+ */
+export async function getMirrorAccountByEvmAddress(evmAddress: string): Promise<MirrorAccount | null> {
+  if (testMirrorMock?.getAccountByEvmAddress) {
+    return testMirrorMock.getAccountByEvmAddress(evmAddress);
+  }
+  if (testMirrorMock?.getAccount) {
+    return testMirrorMock.getAccount(evmAddress);
+  }
+
+  const clean = evmAddress.trim().toLowerCase();
+  const baseUrl = getMirrorNodeBaseUrl();
+
+  // 1. Direct path lookup: /api/v1/accounts/{evmAddress}
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/accounts/${encodeURIComponent(clean)}`, {
+      headers: { Accept: 'application/json' },
+      next: { revalidate: 0 },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.account) return data;
+    }
+  } catch (err) {
+    console.warn(`[Mirror Node] Direct EVM lookup failed for ${clean}:`, err);
+  }
+
+  // 2. Query parameter lookup: /api/v1/accounts?account.evm_address={evmAddress}
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/accounts?account.evm_address=${encodeURIComponent(clean)}`, {
+      headers: { Accept: 'application/json' },
+      next: { revalidate: 0 },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
+        return data.accounts[0];
+      }
+    }
+  } catch (err) {
+    console.warn(`[Mirror Node] Query EVM lookup failed for ${clean}:`, err);
+  }
+
+  return null;
 }
 
 /**

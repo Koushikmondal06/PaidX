@@ -90,6 +90,51 @@ export type Database = {
         };
         Relationships: [];
       };
+      wallet_challenges: {
+        Row: {
+          id: string;
+          user_id: string;
+          wallet_address: string;
+          network: string;
+          chain_id: number;
+          action: string;
+          challenge_text: string;
+          nonce: string;
+          used: boolean;
+          used_at: string | null;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          wallet_address: string;
+          network?: string;
+          chain_id?: number;
+          action?: string;
+          challenge_text: string;
+          nonce: string;
+          used?: boolean;
+          used_at?: string | null;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          wallet_address?: string;
+          network?: string;
+          chain_id?: number;
+          action?: string;
+          challenge_text?: string;
+          nonce?: string;
+          used?: boolean;
+          used_at?: string | null;
+          expires_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       permissions: {
         Row: {
           id: string;

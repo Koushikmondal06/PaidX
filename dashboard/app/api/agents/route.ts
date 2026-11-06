@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAuthenticatedUser } from '@/lib/server/auth';
 import { hashAgentToken } from '@/lib/agent/policyEngine';
+import { delegatedSigner } from '@/lib/hedera/signing/delegatedSigner';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,10 +91,12 @@ export async function POST(req: NextRequest) {
 
     // 1. Resolve and verify wallet ownership and kind
     let targetWalletId = walletId;
+    let selectedWallet: any = null;
+
     if (targetWalletId) {
       const { data: wallet, error: walletError } = await supabase
         .from('wallets')
-        .select('id, user_id, kind, address')
+        .select('id, user_id, kind, address, verification_metadata')
         .eq('id', targetWalletId)
         .maybeSingle();
 
@@ -117,11 +120,13 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+
+      selectedWallet = wallet;
     } else {
       // Find user's existing primary or latest Hedera wallet
       const { data: existingHederaWallets, error: findError } = await supabase
         .from('wallets')
-        .select('id, kind, address, is_primary')
+        .select('id, user_id, kind, address, is_primary, verification_metadata')
         .eq('user_id', user.id)
         .eq('kind', 'hedera')
         .order('is_primary', { ascending: false })
@@ -145,7 +150,19 @@ export async function POST(req: NextRequest) {
       }
 
       targetWalletId = existingHederaWallet.id;
+      selectedWallet = existingHederaWallet;
     }
+
+    // Requirement 13: Keep autonomous payments disabled until delegated signing,
+    // spending policies, approval handling, and x402 settlement have passed integration tests.
+    // A MetaMask-linked wallet without an in-memory/delegated signer cannot autonomously sign native SDK transactions.
+    const metadata = selectedWallet?.verification_metadata as Record<string, any> | null;
+    const isMetaMaskLinked =
+      metadata?.signer_type === 'metamask_evm' || metadata?.verification_method === 'metamask_evm_signature';
+    const hasDelegatedSigner = selectedWallet?.address
+      ? await delegatedSigner.canSign(selectedWallet.address)
+      : false;
+    const effectiveAutonomous = isMetaMaskLinked && !hasDelegatedSigner ? false : Boolean(autonomousPaymentsEnabled);
 
     // 2. Generate raw Agent Bearer Token
     const rawSecret = crypto.randomBytes(24).toString('hex');
@@ -182,7 +199,7 @@ export async function POST(req: NextRequest) {
       monthly_budget: monthlyBudget.toString(),
       spent_today: '0',
       spent_this_month: '0',
-      autonomous_payments_enabled: Boolean(autonomousPaymentsEnabled),
+      autonomous_payments_enabled: effectiveAutonomous,
       allowed_networks: allowedNetworks,
       allowed_assets: allowedAssets,
     });
@@ -199,6 +216,7 @@ export async function POST(req: NextRequest) {
       agentName: connection.agent_name,
       token: rawToken, // Displayed once to the user
       prefix: tokenPrefix,
+      autonomousPaymentsEnabled: effectiveAutonomous,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Server error';

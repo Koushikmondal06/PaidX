@@ -30,6 +30,7 @@ import {
   Wallet,
   RefreshCw,
 } from 'lucide-react';
+import { HEDERA_TESTNET_CHAIN_PARAMS } from '@/lib/hedera/chain';
 
 interface AgentItem {
   id: string;
@@ -73,6 +74,8 @@ interface HederaWalletInfo {
   chainId: number;
   verified: boolean;
   publicKey?: string;
+  evmAddress?: string | null;
+  signerType?: string;
   isPrimary: boolean;
   hashScanUrl: string;
   balance?: {
@@ -97,6 +100,9 @@ export default function AgentWalletPage() {
 
   // Link Wallet Modal State
   const [showLinkWalletModal, setShowLinkWalletModal] = useState(false);
+  const [activeLinkTab, setActiveLinkTab] = useState<'metamask' | 'manual'>('metamask');
+  const [isLinkingMetaMask, setIsLinkingMetaMask] = useState(false);
+  const [metaMaskStatusText, setMetaMaskStatusText] = useState<string | null>(null);
   const [linkAccountId, setLinkAccountId] = useState('');
   const [linkSigningKey, setLinkSigningKey] = useState('');
   const [linkPublicKey, setLinkPublicKey] = useState('');
@@ -174,6 +180,125 @@ export default function AgentWalletPage() {
   useEffect(() => {
     loadData();
   }, [userId]);
+
+  // Handle MetaMask Hedera Testnet Wallet Linking
+  const handleLinkMetaMask = async () => {
+    setWalletLinkError(null);
+    setWalletLinkSuccess(null);
+    setIsLinkingMetaMask(true);
+
+    try {
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error(
+          'MetaMask extension is not detected in your browser. Please install MetaMask to use 1-click EVM wallet linking.'
+        );
+      }
+
+      const ethereum = (window as any).ethereum;
+
+      // 1. Request accounts
+      setMetaMaskStatusText('Connecting to MetaMask...');
+      const accounts: string[] = await ethereum.request({ method: 'eth_requestAccounts' });
+      if (!accounts || accounts.length === 0) {
+        throw new Error('No accounts selected in MetaMask.');
+      }
+      const evmAddress = accounts[0];
+
+      // 2. Ensure connected to Hedera Testnet (Chain ID 296 / 0x128)
+      setMetaMaskStatusText('Switching to Hedera Testnet (Chain ID 296)...');
+      const currentChainIdHex: string = await ethereum.request({ method: 'eth_chainId' });
+      const currentChainId = parseInt(currentChainIdHex, 16);
+
+      if (currentChainId !== 296) {
+        try {
+          await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x128' }],
+          });
+        } catch (switchErr: any) {
+          if (switchErr.code === 4902 || switchErr?.data?.originalError?.code === 4902) {
+            await ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [HEDERA_TESTNET_CHAIN_PARAMS],
+            });
+          } else {
+            throw switchErr;
+          }
+        }
+      }
+
+      // 3. Request server-issued, single-use, expiring challenge
+      setMetaMaskStatusText('Requesting single-use challenge from PaidX server...');
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const chalRes = await fetch('/api/wallets/hedera/challenge', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          evmAddress,
+          chainId: 296,
+          network: 'hedera:testnet',
+          action: 'link-metamask-hedera',
+        }),
+      });
+
+      const chalData = await chalRes.json();
+      if (!chalRes.ok) {
+        throw new Error(chalData.error || 'Failed to issue verification challenge.');
+      }
+
+      // 4. Request personal_sign signature from MetaMask
+      setMetaMaskStatusText('Please sign the verification message in MetaMask...');
+      const signature: string = await ethereum.request({
+        method: 'personal_sign',
+        params: [chalData.challenge, evmAddress],
+      });
+
+      // 5. Submit signed challenge to server for verification & Mirror Node lookup
+      setMetaMaskStatusText('Verifying signature & resolving Hedera account on Mirror Node...');
+      const linkRes = await fetch('/api/wallets/hedera', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          evmAddress,
+          signature,
+          challenge: chalData.challenge,
+          nonce: chalData.nonce,
+          chainId: 296,
+          network: 'hedera:testnet',
+          action: 'link-metamask-hedera',
+        }),
+      });
+
+      const linkData = await linkRes.json();
+      if (!linkRes.ok) {
+        throw new Error(linkData.error || 'Failed to verify and link MetaMask wallet.');
+      }
+
+      setWalletLinkSuccess(
+        `MetaMask wallet (${evmAddress.slice(0, 6)}...${evmAddress.slice(-4)}) resolved to Hedera Account "${linkData.wallet.address}" and linked successfully!`
+      );
+      await loadData();
+
+      setTimeout(() => {
+        setShowLinkWalletModal(false);
+        setWalletLinkSuccess(null);
+        setMetaMaskStatusText(null);
+      }, 2000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'MetaMask linking failed';
+      setWalletLinkError(msg);
+    } finally {
+      setIsLinkingMetaMask(false);
+      setMetaMaskStatusText(null);
+    }
+  };
 
   // Handle Register/Link Hedera Wallet
   const handleLinkWalletSubmit = async (e: React.FormEvent) => {
@@ -378,11 +503,12 @@ export default function AgentWalletPage() {
             onClick={() => {
               setWalletLinkError(null);
               setWalletLinkSuccess(null);
+              setActiveLinkTab('metamask');
               setShowLinkWalletModal(true);
             }}
           >
             <Wallet className="w-4 h-4 mr-1.5" />
-            {hederaWallet ? 'Manage Hedera Wallet' : 'Link Hedera Wallet'}
+            {hederaWallet ? 'Manage Hedera Wallet' : 'Link MetaMask to Hedera'}
           </Button>
 
           <Button
@@ -441,9 +567,17 @@ export default function AgentWalletPage() {
                 <span className="text-xs font-mono uppercase tracking-wider text-[#AAAAAA]">Connected Hedera Wallet</span>
                 <Badge variant="active">Verified on Mirror Node</Badge>
                 <Badge variant="info">Testnet (296)</Badge>
+                {hederaWallet.signerType === 'metamask_evm' && (
+                  <Badge variant="info">MetaMask EVM</Badge>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xl font-bold font-mono text-[#00F5D4]">{hederaWallet.address}</span>
+                {hederaWallet.evmAddress && (
+                  <span className="text-xs font-mono text-[#AAAAAA] bg-[#1A2E38]/60 px-2 py-0.5 rounded border border-[#1A2E38]">
+                    EVM: {hederaWallet.evmAddress.slice(0, 6)}...{hederaWallet.evmAddress.slice(-4)}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -478,6 +612,7 @@ export default function AgentWalletPage() {
                 onClick={() => {
                   setWalletLinkError(null);
                   setWalletLinkSuccess(null);
+                  setActiveLinkTab('metamask');
                   setShowLinkWalletModal(true);
                 }}
               >
@@ -494,22 +629,36 @@ export default function AgentWalletPage() {
               <div>
                 <h3 className="text-sm font-semibold text-[#DFE0E2]">No Hedera Wallet Linked</h3>
                 <p className="text-xs text-[#AAAAAA] mt-1">
-                  You must link an authorized Hedera Testnet account before creating AI agents or executing conversational x402 payments.
+                  You must link an authorized Hedera Testnet account (via MetaMask or Account ID) before creating AI agents or executing conversational x402 payments.
                 </p>
               </div>
             </div>
-            <Button
-              variant="primary"
-              onClick={() => {
-                setWalletLinkError(null);
-                setWalletLinkSuccess(null);
-                setShowLinkWalletModal(true);
-              }}
-              className="shrink-0"
-            >
-              <Wallet className="w-4 h-4 mr-1.5" />
-              Link Hedera Account Now
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setWalletLinkError(null);
+                  setWalletLinkSuccess(null);
+                  setActiveLinkTab('metamask');
+                  setShowLinkWalletModal(true);
+                }}
+              >
+                <Wallet className="w-4 h-4 mr-1.5" />
+                Link MetaMask to Hedera
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setWalletLinkError(null);
+                  setWalletLinkSuccess(null);
+                  setActiveLinkTab('manual');
+                  setShowLinkWalletModal(true);
+                }}
+              >
+                Manual ID
+              </Button>
+            </div>
           </div>
         </Card>
       )}
@@ -780,15 +929,41 @@ export default function AgentWalletPage() {
         onClose={() => setShowLinkWalletModal(false)}
         title={hederaWallet ? 'Manage Connected Hedera Wallet' : 'Link Hedera Testnet Wallet'}
       >
-        <form onSubmit={handleLinkWalletSubmit} className="space-y-4">
-          <div className="p-3 bg-[#071013] border border-[#1A2E38] rounded-lg text-xs font-mono text-[#AAAAAA] space-y-1">
-            <div className="font-semibold text-[#DFE0E2] flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
-              Hedera Mirror Node On-Chain Verification
-            </div>
-            <p>
-              Enter your Hedera account ID. PaidX will verify the account on Mirror Node, check key control, and link it securely.
-            </p>
+        <div className="space-y-4">
+          {/* Tab Selector */}
+          <div className="flex items-center gap-2 border-b border-[#1A2E38] pb-3">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveLinkTab('metamask');
+                setWalletLinkError(null);
+                setWalletLinkSuccess(null);
+              }}
+              className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeLinkTab === 'metamask'
+                  ? 'bg-[#5465FF] text-white font-semibold'
+                  : 'text-[#AAAAAA] hover:text-[#DFE0E2] hover:bg-[#1A2E38]/50'
+              }`}
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              MetaMask (EVM Linking)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveLinkTab('manual');
+                setWalletLinkError(null);
+                setWalletLinkSuccess(null);
+              }}
+              className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeLinkTab === 'manual'
+                  ? 'bg-[#5465FF] text-white font-semibold'
+                  : 'text-[#AAAAAA] hover:text-[#DFE0E2] hover:bg-[#1A2E38]/50'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              Manual Account ID
+            </button>
           </div>
 
           {walletLinkError && (
@@ -805,45 +980,99 @@ export default function AgentWalletPage() {
             </div>
           )}
 
-          <Input
-            label="Hedera Account ID"
-            value={linkAccountId}
-            onChange={(e) => setLinkAccountId(e.target.value)}
-            placeholder="e.g. 0.0.123456"
-            required
-          />
+          {activeLinkTab === 'metamask' ? (
+            <div className="space-y-4">
+              <div className="p-4 bg-[#071013] border border-[#1A2E38] rounded-lg text-xs font-mono text-[#AAAAAA] space-y-2">
+                <div className="font-semibold text-[#DFE0E2] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#00F5D4]" />
+                  MetaMask Hedera Testnet Integration
+                </div>
+                <p>
+                  Link your MetaMask EVM wallet to PaidX on Hedera Testnet.
+                </p>
+                <div className="space-y-1 text-[11px] text-[#888888]">
+                  <div>• <span className="text-[#DFE0E2]">Network:</span> Hedera Testnet (Chain ID 296)</div>
+                  <div>• <span className="text-[#DFE0E2]">RPC:</span> https://testnet.hashio.io/api</div>
+                  <div>• <span className="text-[#DFE0E2]">Security:</span> Server-issued, single-use cryptographic challenge</div>
+                  <div>• <span className="text-[#DFE0E2]">Resolution:</span> Automatically resolves EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
+                </div>
+              </div>
 
-          <div>
-            <Input
-              label="Delegated Signing Key (Optional / Dev & Testing)"
-              type="password"
-              value={linkSigningKey}
-              onChange={(e) => setLinkSigningKey(e.target.value)}
-              placeholder="0x... or 302e... (DER/Hex private key)"
-            />
-            <p className="text-[11px] font-mono text-[#AAAAAA] mt-1">
-              Encrypted in memory only, never stored on disk or database. Enables AI agents to sign payments autonomously.
-            </p>
-          </div>
+              {metaMaskStatusText && (
+                <div className="p-3 bg-[#5465FF]/10 border border-[#5465FF]/30 rounded-lg text-[#DFE0E2] text-xs font-mono flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#5465FF] shrink-0" />
+                  <span>{metaMaskStatusText}</span>
+                </div>
+              )}
 
-          <div>
-            <Input
-              label="Public Key (Alternative if no private key)"
-              value={linkPublicKey}
-              onChange={(e) => setLinkPublicKey(e.target.value)}
-              placeholder="302a... (Hex public key)"
-            />
-          </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#1A2E38]">
+                <Button variant="outline" type="button" onClick={() => setShowLinkWalletModal(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="button"
+                  onClick={handleLinkMetaMask}
+                  disabled={isLinkingMetaMask}
+                >
+                  <Wallet className="w-4 h-4 mr-1.5" />
+                  {isLinkingMetaMask ? 'Connecting & Verifying...' : 'Connect & Link MetaMask'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleLinkWalletSubmit} className="space-y-4">
+              <div className="p-3 bg-[#071013] border border-[#1A2E38] rounded-lg text-xs font-mono text-[#AAAAAA] space-y-1">
+                <div className="font-semibold text-[#DFE0E2] flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
+                  Hedera Mirror Node On-Chain Verification
+                </div>
+                <p>
+                  Enter your Hedera account ID. PaidX will verify the account on Mirror Node, check key control, and link it securely.
+                </p>
+              </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => setShowLinkWalletModal(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" type="submit" disabled={isLinkingWallet || !linkAccountId.trim()}>
-              {isLinkingWallet ? 'Verifying on Mirror Node...' : 'Verify & Link Wallet'}
-            </Button>
-          </div>
-        </form>
+              <Input
+                label="Hedera Account ID"
+                value={linkAccountId}
+                onChange={(e) => setLinkAccountId(e.target.value)}
+                placeholder="e.g. 0.0.123456"
+                required
+              />
+
+              <div>
+                <Input
+                  label="Delegated Signing Key (Optional / Dev & Testing)"
+                  type="password"
+                  value={linkSigningKey}
+                  onChange={(e) => setLinkSigningKey(e.target.value)}
+                  placeholder="0x... or 302e... (DER/Hex private key)"
+                />
+                <p className="text-[11px] font-mono text-[#AAAAAA] mt-1">
+                  Encrypted in memory only, never stored on disk or database. Enables AI agents to sign payments autonomously.
+                </p>
+              </div>
+
+              <div>
+                <Input
+                  label="Public Key (Alternative if no private key)"
+                  value={linkPublicKey}
+                  onChange={(e) => setLinkPublicKey(e.target.value)}
+                  placeholder="302a... (Hex public key)"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#1A2E38]">
+                <Button variant="outline" type="button" onClick={() => setShowLinkWalletModal(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" type="submit" disabled={isLinkingWallet || !linkAccountId.trim()}>
+                  {isLinkingWallet ? 'Verifying on Mirror Node...' : 'Verify & Link Wallet'}
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
       </Modal>
 
       {/* Connect AI Agent Modal */}
