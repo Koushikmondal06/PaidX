@@ -1,6 +1,6 @@
 /**
  * PaidX MCP Tools Definitions
- * Standard schema definitions for all 15 Model Context Protocol tools.
+ * Standard schema definitions for all 16 Model Context Protocol tools.
  */
 
 export interface McpToolSchema {
@@ -95,7 +95,7 @@ export const MCP_TOOL_DEFINITIONS: McpToolSchema[] = [
   },
   {
     name: 'get_payment_status',
-    description: 'Retrieves the current status of an agent payment by payment ID or transaction ID.',
+    description: 'Retrieves the current status of an agent payment by payment ID or transaction ID scoped to this agent.',
     inputSchema: {
       type: 'object',
       properties: {

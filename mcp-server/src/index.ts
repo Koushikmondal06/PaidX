@@ -1,18 +1,114 @@
 import http from 'http';
 import dotenv from 'dotenv';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { MCP_TOOL_DEFINITIONS } from './tools.js';
 
 dotenv.config();
 
 const PORT = parseInt(process.env.MCP_PORT || '3002', 10);
 const PAIDX_BACKEND_URL = process.env.PAIDX_BACKEND_URL || 'http://localhost:3000/api/mcp';
+const MAX_REQUEST_SIZE_BYTES = 2 * 1024 * 1024; // 2MB limit
+
+// Active SSE transport sessions
+const sseTransports = new Map<string, SSEServerTransport>();
 
 /**
- * PaidX Dedicated Remote MCP Server
- * Exposes Streamable HTTP and SSE transports for AI agents (Claude Desktop, Cursor, OpenAI Agents).
+ * Creates and initializes the MCP SDK Server instance
+ */
+function createMcpSdkServer(bearerToken?: string): Server {
+  const mcpServer = new Server(
+    {
+      name: 'paidx-mcp-server',
+      version: '1.0.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  // 1. Tool Listing Handler (MCP SDK standard)
+  mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: MCP_TOOL_DEFINITIONS.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      })),
+    };
+  });
+
+  // 2. Tool Execution Handler (Forward to authoritative PaidX Backend)
+  mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: toolArgs } = request.params;
+
+    if (!bearerToken) {
+      throw new Error('Unauthorized: Missing PaidX Agent Bearer Token in request context.');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const res = await fetch(PAIDX_BACKEND_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: bearerToken,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name,
+            arguments: toolArgs || {},
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`PaidX Backend returned HTTP ${res.status}: ${errorText}`);
+      }
+
+      const data = (await res.json()) as any;
+      if (data.error) {
+        throw new Error(data.error.message || JSON.stringify(data.error));
+      }
+
+      return {
+        content: data.result?.content || [
+          {
+            type: 'text',
+            text: JSON.stringify(data.result, null, 2),
+          },
+        ],
+      };
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      const msg = err instanceof Error ? err.message : 'Unknown backend forwarding error';
+      throw new Error(`Tool execution failed: ${msg}`);
+    }
+  });
+
+  return mcpServer;
+}
+
+/**
+ * HTTP Server handling Streamable HTTP and SSE transports
  */
 const server = http.createServer(async (req, res) => {
-  // CORS Headers
+  // CORS & Security Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
@@ -23,10 +119,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const url = req.url || '/';
+  const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const pathname = urlObj.pathname;
 
   // 1. Health & Discovery Endpoint
-  if (req.method === 'GET' && (url === '/' || url === '/mcp' || url === '/health')) {
+  if (req.method === 'GET' && (pathname === '/' || pathname === '/mcp' || pathname === '/health')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -43,36 +140,57 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 2. Server-Sent Events (SSE) Transport
-  if (req.method === 'GET' && url === '/sse') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
+  // 2. Server-Sent Events (SSE) Transport Endpoint
+  if (req.method === 'GET' && pathname === '/sse') {
+    const authHeader = (req.headers['authorization'] as string) || '';
+    const mcpServer = createMcpSdkServer(authHeader);
 
-    res.write(`event: endpoint\ndata: ${url}\n\n`);
-
-    const keepAlive = setInterval(() => {
-      res.write(': keepalive\n\n');
-    }, 15000);
+    const transport = new SSEServerTransport('/message', res);
+    const sessionId = transport.sessionId;
+    sseTransports.set(sessionId, transport);
 
     req.on('close', () => {
-      clearInterval(keepAlive);
+      sseTransports.delete(sessionId);
     });
+
+    await mcpServer.connect(transport);
+    await transport.start();
     return;
   }
 
-  // 3. Streamable HTTP / JSON-RPC 2.0 Endpoint
-  if (req.method === 'POST' && (url === '/mcp' || url === '/api/mcp' || url === '/')) {
+  // 3. SSE Inbound Message Endpoint (POST /message?sessionId=...)
+  if (req.method === 'POST' && pathname === '/message') {
+    const sessionId = urlObj.searchParams.get('sessionId');
+    if (!sessionId || !sseTransports.has(sessionId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid or expired SSE sessionId' }));
+      return;
+    }
+
+    const transport = sseTransports.get(sessionId)!;
+    await transport.handlePostMessage(req, res);
+    return;
+  }
+
+  // 4. Streamable HTTP / JSON-RPC 2.0 Endpoint (POST /mcp or POST /)
+  if (req.method === 'POST' && (pathname === '/mcp' || pathname === '/api/mcp' || pathname === '/')) {
     let bodyStr = '';
+    let bytesReceived = 0;
+
     req.on('data', (chunk) => {
+      bytesReceived += chunk.length;
+      if (bytesReceived > MAX_REQUEST_SIZE_BYTES) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload Too Large: Maximum allowed size is 2MB.' }));
+        req.destroy();
+        return;
+      }
       bodyStr += chunk;
     });
 
     req.on('end', async () => {
       try {
-        const authHeader = req.headers['authorization'] || '';
+        const authHeader = (req.headers['authorization'] as string) || '';
         const body = JSON.parse(bodyStr || '{}');
         const { jsonrpc, id, method, params } = body;
 
@@ -102,7 +220,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Handle tools/list locally or forward
+        // Handle tools/list locally
         if (method === 'tools/list') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
@@ -110,14 +228,18 @@ const server = http.createServer(async (req, res) => {
               jsonrpc: '2.0',
               id,
               result: {
-                tools: MCP_TOOL_DEFINITIONS,
+                tools: MCP_TOOL_DEFINITIONS.map((t) => ({
+                  name: t.name,
+                  description: t.description,
+                  inputSchema: t.inputSchema,
+                })),
               },
             })
           );
           return;
         }
 
-        // Authenticate tool execution against backend orchestrator
+        // Authenticate tool execution against backend
         if (!authHeader) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(
@@ -133,19 +255,40 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Forward tool execution to backend orchestrator
-        const backendRes = await fetch(PAIDX_BACKEND_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: authHeader,
-          },
-          body: bodyStr,
-        });
+        // Forward tool execution with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        const data = await backendRes.json();
-        res.writeHead(backendRes.status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(data));
+        try {
+          const backendRes = await fetch(PAIDX_BACKEND_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: authHeader,
+            },
+            body: bodyStr,
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+          const data = await backendRes.json();
+          res.writeHead(backendRes.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(data));
+        } catch (fetchErr: unknown) {
+          clearTimeout(timeoutId);
+          const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
+          res.writeHead(504, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id,
+              error: {
+                code: -32603,
+                message: isAbort ? 'Gateway Timeout: Backend timed out' : 'Backend connection error',
+              },
+            })
+          );
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Error processing MCP request';
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -164,10 +307,37 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Endpoint not found' }));
 });
 
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('[MCP Server] SIGTERM received. Shutting down gracefully...');
+  for (const transport of sseTransports.values()) {
+    try {
+      transport.close();
+    } catch {}
+  }
+  server.close(() => {
+    console.log('[MCP Server] Closed all connections.');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('[MCP Server] SIGINT received. Shutting down gracefully...');
+  for (const transport of sseTransports.values()) {
+    try {
+      transport.close();
+    } catch {}
+  }
+  server.close(() => {
+    process.exit(0);
+  });
+});
+
 server.listen(PORT, () => {
   console.log(`=======================================================`);
   console.log(`  PaidX Dedicated MCP Server running on port ${PORT}`);
   console.log(`  Transport: Streamable HTTP & SSE`);
+  console.log(`  Tools: ${MCP_TOOL_DEFINITIONS.length} registered`);
   console.log(`  URL: http://localhost:${PORT}/mcp`);
   console.log(`  Connected Backend Orchestrator: ${PAIDX_BACKEND_URL}`);
   console.log(`=======================================================`);

@@ -33,7 +33,7 @@ Dedicated Model Context Protocol (MCP) server for the **PaidX Agentic Wallet**, 
 
 ---
 
-## 15 Standard MCP Tools Exposed
+## 16 Standard MCP Tools Exposed
 
 ### 1. Wallet Tools
 * `get_connected_wallet`: Metadata on user's authorized Hedera account.

@@ -1,10 +1,16 @@
 import 'server-only';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { getAccountBalances, getHtsAssetConfig } from '../hedera/hts';
+import { getAccountBalances, getHtsAssetConfig, fromAtomicUnits } from '../hedera/hts';
+import {
+  parseToAtomicUnits,
+  validateDecimalString,
+  isValidHederaTokenId,
+} from '../hedera/decimal';
 import { getMirrorTransaction, getMirrorTopicMessages, getHashScanTxUrl } from '../hedera/mirrorNode';
 import { createRecipientPaymentRequirements } from '../hedera/x402/requirements';
 import { orchestrateAgentPayment } from '../agent/orchestrator';
 import { SUPPORTED_HEDERA_ASSETS } from '../hedera/types';
+import { isValidHederaAccountId } from '../hedera/client';
 import type { AgentContext } from '../agent/policyEngine';
 
 export interface McpToolDefinition {
@@ -60,7 +66,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
     },
     handler: async (ctx, args) => {
       const balances = await getAccountBalances(ctx.walletAddress);
-      if (args?.asset) {
+      if (args?.asset && typeof args.asset === 'string') {
         const symbol = args.asset.toUpperCase();
         const config = getHtsAssetConfig(symbol);
         const tokenRaw = balances.tokens[config.tokenId] || '0';
@@ -68,7 +74,9 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
           account: ctx.walletAddress,
           asset: config.symbol,
           tokenId: config.tokenId,
-          balance: config.isNativeHbar ? balances.hbarBalance : (Number(tokenRaw) / 10 ** config.decimals).toString(),
+          balance: config.isNativeHbar
+            ? balances.hbarBalance
+            : fromAtomicUnits(tokenRaw, config.decimals),
         };
       }
       return {
@@ -136,16 +144,25 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       required: ['recipient', 'amount'],
     },
     handler: async (ctx, args) => {
-      const asset = args.asset || 'USDC';
-      const { requirements, tokenConfig, atomicAmount } = createRecipientPaymentRequirements({
-        recipient: args.recipient,
-        amount: args.amount,
-        assetSymbolOrId: asset,
+      const recipient = args?.recipient?.trim();
+      if (!recipient || !isValidHederaAccountId(recipient)) {
+        throw new Error(`Invalid recipient account ID: "${recipient}"`);
+      }
+
+      const asset = args?.asset || 'USDC';
+      const tokenConfig = getHtsAssetConfig(asset);
+      validateDecimalString(String(args?.amount || ''), tokenConfig.decimals);
+      const atomicAmount = parseToAtomicUnits(String(args.amount), tokenConfig.decimals).toString();
+
+      const { requirements } = createRecipientPaymentRequirements({
+        recipient,
+        amount: String(args.amount),
+        assetSymbolOrId: tokenConfig.tokenId,
       });
 
       return {
         valid: true,
-        recipient: args.recipient,
+        recipient,
         amountDisplay: `${args.amount} ${tokenConfig.symbol}`,
         atomicAmount,
         asset: tokenConfig.symbol,
@@ -172,20 +189,22 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       required: ['recipient', 'amount'],
     },
     handler: async (ctx, args) => {
-      const res = await orchestrateAgentPayment(ctx, {
-        recipient: args.recipient,
-        amount: args.amount,
+      if (!args?.recipient || !args?.amount) {
+        throw new Error('Missing required arguments: recipient and amount');
+      }
+
+      return orchestrateAgentPayment(ctx, {
+        recipient: String(args.recipient).trim(),
+        amount: String(args.amount).trim(),
         asset: args.asset || 'USDC',
         network: args.network || 'hedera:testnet',
         paymentReference: args.paymentReference,
       });
-
-      return res;
     },
   },
   {
     name: 'get_payment_status',
-    description: 'Retrieves the current status of an agent payment by payment ID or transaction ID.',
+    description: 'Retrieves the current status of an agent payment by payment ID or transaction ID scoped to this agent.',
     parameters: {
       type: 'object',
       properties: {
@@ -195,18 +214,22 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
     },
     handler: async (ctx, args) => {
       const supabase = createServerSupabaseClient();
-      let query = supabase.from('agent_payments').select('*');
+      // Strictly scope payment query to the authenticated agentId
+      let query = supabase
+        .from('agent_payments')
+        .select('*')
+        .eq('agent_id', ctx.agentId);
 
-      if (args.paymentId) {
+      if (args?.paymentId) {
         query = query.eq('id', args.paymentId);
-      } else if (args.transactionId) {
+      } else if (args?.transactionId) {
         query = query.eq('tx_id', args.transactionId);
       } else {
         return { error: 'Provide either paymentId or transactionId' };
       }
 
       const { data: payment } = await query.maybeSingle();
-      if (!payment) return { found: false };
+      if (!payment) return { found: false, message: 'Payment record not found for this agent.' };
 
       return {
         found: true,
@@ -218,6 +241,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         hashScanUrl: payment.hashscan_url,
         hcsTopicId: payment.hcs_topic_id,
         hcsSequenceNumber: payment.hcs_sequence_number,
+        hcsStatus: payment.hcs_status,
         confirmedAt: payment.confirmed_at,
       };
     },
@@ -233,6 +257,8 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       required: ['transactionId'],
     },
     handler: async (ctx, args) => {
+      if (!args?.transactionId) throw new Error('transactionId is required');
+
       const tx = await getMirrorTransaction(args.transactionId);
       if (!tx) {
         return {
@@ -264,7 +290,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       },
     },
     handler: async (ctx, args) => {
-      const limit = args.limit || 10;
+      const limit = Math.min(Math.max(Number(args?.limit) || 10, 1), 50);
       const supabase = createServerSupabaseClient();
       const { data: payments } = await supabase
         .from('agent_payments')
@@ -323,7 +349,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         .maybeSingle();
 
       if (!policy) {
-        return { error: 'No policy configured' };
+        return { error: 'No policy configured for this agent' };
       }
 
       const dailyBudget = BigInt(policy.daily_budget || '0');
@@ -376,32 +402,49 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       required: ['recipient', 'amount', 'reason'],
     },
     handler: async (ctx, args) => {
+      const recipient = args?.recipient?.trim();
+      if (!recipient || !isValidHederaAccountId(recipient)) {
+        throw new Error(`Invalid recipient account ID: "${recipient}"`);
+      }
+
+      const assetSymbol = (args?.asset || 'USDC').trim().toUpperCase();
+      const tokenConfig = getHtsAssetConfig(assetSymbol);
+      validateDecimalString(String(args?.amount || ''), tokenConfig.decimals);
+      const atomicAmount = parseToAtomicUnits(String(args.amount), tokenConfig.decimals).toString();
+
       const supabase = createServerSupabaseClient();
-      const { data: payment } = await supabase
+      const { data: payment, error } = await supabase
         .from('agent_payments')
         .insert({
           agent_id: ctx.agentId,
           user_id: ctx.userId,
           wallet_id: ctx.walletId,
-          recipient: args.recipient,
-          amount_atomic: args.amount,
-          amount_display: `${args.amount} ${args.asset || 'USDC'}`,
-          asset: args.asset || 'USDC',
-          asset_id: '0.0.5449156',
-          status: 'pending',
-          idempotency_key: `approval-${ctx.agentId}-${Date.now()}`,
+          recipient,
+          amount_atomic: atomicAmount,
+          amount_display: `${args.amount} ${tokenConfig.symbol}`,
+          asset: tokenConfig.symbol,
+          asset_id: tokenConfig.tokenId,
+          network: 'hedera:testnet',
+          status: 'approval_required',
+          idempotency_key: `${ctx.agentId}:approval-${Date.now()}`,
           failure_reason: `Pending human review: ${args.reason}`,
         })
         .select()
         .single();
 
+      if (error || !payment) {
+        throw new Error(`Failed to queue approval request: ${error?.message || 'Database error'}`);
+      }
+
       return {
         approvalRequested: true,
-        paymentId: payment?.id,
-        recipient: args.recipient,
+        paymentId: payment.id,
+        recipient,
         amount: args.amount,
-        status: 'pending_user_approval',
-        message: 'Payment request queued. The user can approve this payment in their PaidX Console.',
+        atomicAmount,
+        asset: tokenConfig.symbol,
+        status: 'approval_required',
+        message: 'Payment request queued. The user must approve this payment in their PaidX Console before execution.',
       };
     },
   },
@@ -421,8 +464,13 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       },
     },
     handler: async (ctx, args) => {
-      const topicId = args.topicId || process.env.HEDERA_HCS_TOPIC_ID || '0.0.5449200';
-      const messages = await getMirrorTopicMessages(topicId, args.limit || 5);
+      const topicId = args?.topicId || process.env.HEDERA_HCS_TOPIC_ID;
+      if (!topicId) {
+        return { error: 'No HCS Topic ID configured or provided.' };
+      }
+
+      const limit = Math.min(Math.max(Number(args?.limit) || 5, 1), 25);
+      const messages = await getMirrorTopicMessages(topicId, limit);
 
       const parsed = messages.map((m) => {
         let content: any = null;
@@ -457,8 +505,19 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
       required: ['transactionId'],
     },
     handler: async (ctx, args) => {
+      if (!args?.transactionId) throw new Error('transactionId is required');
+
       const tx = await getMirrorTransaction(args.transactionId);
       const isSettled = tx && tx.result === 'SUCCESS';
+
+      // Verify associated HCS message in database / topic
+      const supabase = createServerSupabaseClient();
+      const { data: paymentRecord } = await supabase
+        .from('agent_payments')
+        .select('*')
+        .eq('tx_id', args.transactionId)
+        .eq('agent_id', ctx.agentId)
+        .maybeSingle();
 
       return {
         transactionId: args.transactionId,
@@ -467,6 +526,9 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         hashScanUrl: getHashScanTxUrl(args.transactionId),
         chargedFeeTinybars: tx?.charged_tx_fee || 0,
         result: tx?.result || 'PENDING_OR_NOT_FOUND',
+        hcsAuditVerified: Boolean(paymentRecord?.hcs_sequence_number),
+        hcsTopicId: paymentRecord?.hcs_topic_id || null,
+        hcsSequenceNumber: paymentRecord?.hcs_sequence_number || null,
       };
     },
   },
