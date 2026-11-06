@@ -68,13 +68,6 @@ function startMcpServer(port = server_js_1.PORT, host = server_js_1.HOST) {
     });
 }
 if (isMainModule()) {
-    try {
-        // Dynamically load dotenv only in standalone local development mode
-        // Never loaded or required in Vercel serverless production
-        const dotenv = require('dotenv');
-        dotenv.config();
-    }
-    catch { }
     startMcpServer();
 }
 exports.default = server_js_1.handleVercelRequest;
