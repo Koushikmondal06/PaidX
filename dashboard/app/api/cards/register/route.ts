@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { computeCardUidHash } from '@/lib/server/cardHash';
+import { getServerPublicClient } from '@/lib/chain';
+import type { Hash } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,15 +63,34 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Insert new card record
+    // Determine card status: active ONLY if on-chain receipt is verified
+    let cardStatus: 'pending' | 'active' = 'pending';
+    if (registrationTxHash) {
+      try {
+        const publicClient = getServerPublicClient();
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: registrationTxHash as Hash,
+          confirmations: 1,
+          timeout: 60_000,
+        });
+        if (receipt.status === 'success') {
+          cardStatus = 'active';
+        }
+      } catch (receiptErr) {
+        console.warn('[Card Register] On-chain receipt verification notice:', receiptErr);
+      }
+    }
+
+    // Insert or update card record
     const { data: card, error: insertError } = await supabase
       .from('cards')
-      .insert({
+      .upsert({
         user_id: user.id,
         uid_hash: uidHash,
-        status: 'active',
+        status: cardStatus,
         registration_tx_hash: registrationTxHash || null,
-      })
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'uid_hash' })
       .select()
       .single();
 
