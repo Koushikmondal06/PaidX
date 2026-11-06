@@ -1,33 +1,33 @@
 'use client';
 
 import React from 'react';
-import { TrendingUp, Activity, CheckCircle, Clock } from 'lucide-react';
+import { Zap, ShieldCheck, Clock, Radio } from 'lucide-react';
 
 export function StatsSection() {
   const stats = [
     {
-      label: 'Global Market Access',
-      value: '$3.9T+',
-      desc: 'Active market capitalization of crypto holders ready to spend at retail.',
-      icon: TrendingUp,
-    },
-    {
-      label: 'Volume Handled Capacity',
-      value: '$7B+',
-      desc: 'Institutional-grade transactional throughput backed by audited smart contracts.',
-      icon: Activity,
-    },
-    {
       label: 'Settlement Latency',
       value: '< 1.2s',
-      desc: 'Sub-second confirmation time on Base Layer 2 for frictionless line-busting.',
+      desc: 'Sub-second block confirmation on Base Layer 2 for frictionless line-busting.',
       icon: Clock,
     },
     {
-      label: 'Transaction Success Rate',
-      value: '99.99%',
-      desc: 'Verifiable on-chain receipts and automated merchant reconciliation.',
-      icon: CheckCircle,
+      label: 'Shopper Gas Fee',
+      value: '$0.00',
+      desc: 'Zero gas tolls for customers via Paymaster-sponsored Account Abstraction.',
+      icon: Zap,
+    },
+    {
+      label: 'Chargeback Risk',
+      value: '0%',
+      desc: 'Cryptographic on-chain finality permanently prevents payment clawbacks.',
+      icon: ShieldCheck,
+    },
+    {
+      label: 'Contactless Experience',
+      value: '1-Tap NFC',
+      desc: 'Physical smart card tap with automated daily session spending limits.',
+      icon: Radio,
     },
   ];
 
@@ -36,14 +36,14 @@ export function StatsSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         <div className="text-center max-w-3xl mx-auto space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-brand-blue bg-brand-blue/10 dark:text-brand-cyan dark:bg-brand-cyan/15">
-            <span>Built for Growth</span>
+            <span>Built for Real-World Retail</span>
           </div>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#090B12] dark:text-[#F5F8FF] tracking-tight">
-            Tap into a $3.9+ trillion crypto market
+            Engineered for physical counter checkout speeds
           </h2>
           <p className="text-base sm:text-lg text-light-text-secondary dark:text-dark-text-secondary leading-relaxed">
-            More than 500 million people worldwide own cryptocurrency. PaidX provides the physical
-            bridge that allows them to purchase goods and services seamlessly in your store.
+            Legacy card networks penalize merchants with 3.5% swipe tolls, 3-day delays, and
+            chargeback disputes. PaidX delivers instantaneous finality directly on Base L2.
           </p>
         </div>
 

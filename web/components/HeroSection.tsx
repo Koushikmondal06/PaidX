@@ -2,23 +2,21 @@
 
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { Copy, Check, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
-import { BaseChainIcon, UsdcIcon } from './CryptoIcons';
+import { Copy, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export function HeroSection() {
-  const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [timeLeft, setTimeLeft] = useState<number>(899); // 14:59 in seconds
 
-  const paymentUri = 'ethereum:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913@8453?value=135000000';
+  const paymentUri = 'ethereum:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913@8453?value=8500000';
+  const displayUri = 'https://pay.paidx.cc/i/k15oSzQ8XpD5m3n...';
+  const CONST_TIME_LEFT = '13:51';
 
   useEffect(() => {
-    // Generate authentic QR code data URL
     QRCode.toDataURL(paymentUri, {
-      width: 280,
+      width: 320,
       margin: 1,
       color: {
-        dark: '#06142F',
+        dark: '#080808',
         light: '#FFFFFF',
       },
     })
@@ -26,219 +24,207 @@ export function HeroSection() {
       .catch((err) => console.error(err));
   }, []);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 900));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatTimer = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = secs % 60;
-    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
-  };
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(paymentUri);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
-    <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden transition-colors duration-300">
-      {/* Background container for Dark Mode using blue-gradient-waves.png */}
+    <section className="relative pt-28 pb-16 md:pt-36 md:pb-24 overflow-hidden bg-white dark:bg-[#050B1B] transition-colors duration-300">
+      {/* Dark Mode subtle background graphic */}
       <div className="absolute inset-0 hidden dark:block hero-dark-bg opacity-90 pointer-events-none" />
       <div className="absolute inset-0 hidden dark:block bg-gradient-to-b from-[#050B1B]/40 via-transparent to-[#050B1B] pointer-events-none" />
 
-      {/* Background container for Light Mode */}
-      <div className="absolute inset-0 dark:hidden bg-gradient-to-b from-[#FFFFFF] via-[#F8F9FE] to-[#FFFFFF] pointer-events-none" />
-      <div className="absolute -top-40 right-0 w-[500px] h-[500px] bg-brand-blue/5 rounded-full blur-3xl pointer-events-none dark:hidden" />
-
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
-          {/* Left Column: Hero Text & CTAs */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-10 items-center">
+          {/* Left Column: Hero Typography & CTAs (strictly matched to Image 1) */}
           <div className="lg:col-span-6 space-y-6 text-left">
-            {/* Top Announcement Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide border border-brand-blue/20 bg-brand-blue/5 text-brand-blue dark:border-brand-cyan/30 dark:bg-brand-cyan/10 dark:text-brand-cyan shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-brand-blue dark:text-brand-cyan" />
-              <span>Next-Gen Crypto Point of Sale • Powered by Base</span>
-            </div>
-
-            {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-[54px] font-extrabold tracking-tight text-[#090B12] dark:text-[#F5F8FF] leading-[1.12]">
-              Accept crypto payments in-store with crypto point-of-sale systems
+            {/* Main Headline - Restrained, clean Archivo font (matched to Image 1) */}
+            <h1 className="font-archivo font-bold text-3xl sm:text-4xl lg:text-[45px] text-[#080808] dark:text-[#F5F8FF] leading-[1.14] tracking-[-0.015em] max-w-[540px]">
+              What if you could buy a cup of chai with crypto as easily as tapping a card?
             </h1>
 
-            {/* Subtext */}
-            <p className="text-lg sm:text-xl text-[#303747] dark:text-[#A9B9D5] leading-relaxed max-w-xl">
-              Accept Bitcoin, Ethereum, stablecoins like USDC, and other crypto as payment at your
-              brick-and-mortar store. PaidX makes it easy to accept crypto in-person with QR-based
-              checkout and fiat settlement straight to your bank accounts.
+            {/* Subtext - Archivo regular, dark muted blue-grey (matched to Image 1) */}
+            <p className="font-archivo text-[17px] sm:text-[18px] text-[#475467] dark:text-[#A9B9D5] leading-[1.6] max-w-[510px]">
+              PaidX brings real-world crypto payments to physical retail counters. Tap a physical
+              NFC card or scan a dynamic QR code for sub-second, zero-gas checkout on Base—settled
+              instantly in native USDC.
             </p>
 
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
+            {/* CTA Buttons - Image 1 styling: strong royal blue primary, white with blue border secondary */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 pt-2">
               <a
                 href="https://console.paidx.cc"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center px-7 py-3.5 rounded-xl text-base font-semibold text-white bg-brand-blue hover:bg-brand-blue-hover dark:bg-brand-blue dark:hover:bg-blue-600 transition-all shadow-md hover:shadow-brand-blue/30 active:scale-[0.98] group"
+                className="inline-flex items-center justify-center px-6 py-3.5 rounded-[8px] text-[15px] font-medium text-white bg-[#1749F5] hover:bg-[#113AC8] transition-all shadow-sm active:scale-[0.99] group"
               >
-                Get Started
+                Launch Console
                 <ArrowRight className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" />
               </a>
               <a
                 href="#features"
-                className="inline-flex items-center justify-center px-7 py-3.5 rounded-xl text-base font-semibold text-[#303747] dark:text-[#F5F8FF] border border-light-border dark:border-white/20 bg-white/80 dark:bg-dark-elevated/60 hover:bg-light-soft dark:hover:bg-dark-alt transition-all shadow-sm"
+                className="inline-flex items-center justify-center px-6 py-3.5 rounded-[8px] text-[15px] font-medium text-[#1749F5] dark:text-[#5B8EFF] bg-white dark:bg-transparent border border-[#1749F5] dark:border-[#5B8EFF] hover:bg-blue-50/60 dark:hover:bg-white/5 transition-all shadow-sm active:scale-[0.99]"
               >
-                Explore Terminals
+                Explore ESP32 Terminal
               </a>
-            </div>
-
-            {/* Micro value props */}
-            <div className="pt-4 flex flex-wrap items-center gap-6 text-xs text-light-text-secondary dark:text-dark-text-muted font-medium">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                <span>Zero volatility guarantee</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <BaseChainIcon size={16} />
-                <span>Sub-second Base L2 settlement</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-brand-coral animate-ping" />
-                <span>Zero chargeback risk</span>
-              </div>
             </div>
           </div>
 
-          {/* Right Column: Reference Visual Representation (Multi-layered POS Mockup) */}
+          {/* Right Column: Layered Miniature Crypto Checkout Illustration (matched to Image 1) */}
           <div className="lg:col-span-6 flex justify-center lg:justify-end">
-            <div className="relative w-full max-w-[500px]">
-              {/* Surrounding Ambient Container */}
-              <div className="p-4 sm:p-7 rounded-2xl bg-[#F0F2FF] dark:bg-dark-surface/90 border border-brand-blue/15 dark:border-brand-cyan/20 shadow-xl dark:shadow-glow-blue transition-all">
-                <div className="relative">
-                  {/* Underneath Card: Order Summary */}
-                  <div className="w-[88%] mx-auto bg-white dark:bg-[#101F3B] rounded-xl p-5 border border-light-border dark:border-white/10 shadow-sm opacity-90 mb-[-120px] transition-all">
-                    <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-white/10">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-gray-200 dark:bg-white/10 flex items-center justify-center font-bold text-xs">
-                          ☕
-                        </div>
-                        <span className="text-xs font-semibold text-light-text-primary dark:text-white">
-                          Blue Bottle Coffee Co.
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-mono text-light-text-secondary dark:text-dark-text-muted">
-                        #POS-8429
-                      </span>
+            {/* Outer Illustration Container: Neutral Light Grey, Rounded-28px, Generous Internal Spacing */}
+            <div className="w-full max-w-[530px] bg-[#F3F5F6] dark:bg-[#09152D] border border-[#E5E7EB] dark:border-white/10 rounded-[28px] p-6 sm:p-8 lg:p-10 shadow-sm flex items-center justify-center min-h-[520px] sm:min-h-[550px]">
+              <div className="relative w-full h-[415px] sm:h-[425px] max-w-[440px] select-none">
+                
+                {/* 1. Background Payment Card: Merchant Order Summary (sits behind, shifted left and aligned vertically like Image 1) */}
+                <div className="absolute left-0 top-[100px] sm:top-[105px] w-[66%] sm:w-[280px] bg-white dark:bg-[#101F3B] rounded-2xl border border-[#E5E7EB] dark:border-white/10 shadow-sm p-3.5 sm:p-4 z-10 transition-transform">
+                  {/* Merchant Top Header */}
+                  <div className="flex items-center gap-2 pb-2.5 border-b border-[#F0F2F5] dark:border-white/10">
+                    <div className="w-5 h-5 rounded-full bg-[#E5E7EB] dark:bg-white/20 flex items-center justify-center text-gray-700 dark:text-gray-200">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="w-3 h-3 lucide lucide-coffee preview-icon"
+                      >
+                        <path d="M10 2v2" />
+                        <path d="M14 2v2" />
+                        <path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1" />
+                        <path d="M6 2v2" />
+                      </svg>
                     </div>
+                    <span className="text-xs font-semibold text-[#111827] dark:text-white truncate">
+                      Corner Chai Bar
+                    </span>
+                  </div>
 
-                    <div className="pt-3 pb-8 space-y-2 text-xs text-light-text-body dark:text-dark-text-secondary">
-                      <div className="flex justify-between">
-                        <span>Artisan Chai Latte x 2</span>
-                        <span className="font-medium text-light-text-primary dark:text-white">$120.00</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Cardamom Bun x 1</span>
-                        <span className="font-medium text-light-text-primary dark:text-white">$15.00</span>
-                      </div>
-                      <div className="flex justify-between pt-1 border-t border-gray-100 dark:border-white/5 font-semibold text-sm text-light-text-primary dark:text-white">
-                        <span>Total Due</span>
-                        <span className="text-brand-blue dark:text-brand-cyan">$135.00</span>
-                      </div>
+                  {/* Order Summary Heading */}
+                  <div className="pt-2.5 pb-1.5">
+                    <h4 className="text-sm font-bold text-[#111827] dark:text-white">
+                      Order Summary
+                    </h4>
+                  </div>
+
+                  {/* Pricing Items with clean horizontal dividers */}
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center py-1 border-b border-[#F0F2F5] dark:border-white/5">
+                      <span className="text-[#6B7280] dark:text-[#94A3B8]">Subtotal</span>
+                      <span className="font-medium text-[#111827] dark:text-white">$8.00</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-[#F0F2F5] dark:border-white/5">
+                      <span className="text-[#6B7280] dark:text-[#94A3B8]">Shipping</span>
+                      <span className="font-medium text-[#111827] dark:text-white">—</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-[#F0F2F5] dark:border-white/5">
+                      <span className="text-[#6B7280] dark:text-[#94A3B8]">Tax</span>
+                      <span className="font-medium text-[#111827] dark:text-white">$0.50</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 font-bold text-[#111827] dark:text-white">
+                      <span>Total</span>
+                      <span>$8.50</span>
                     </div>
                   </div>
 
-                  {/* Foreground Card: PaidX Dynamic QR Checkout Modal */}
-                  <div className="relative z-10 bg-white dark:bg-[#0E1A34] rounded-2xl p-6 border border-light-border dark:border-brand-cyan/30 shadow-2xl transition-all">
-                    {/* Modal Top Bar */}
-                    <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-white/10">
-                      <div className="flex items-center gap-2">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src="/logo.svg"
-                          alt="PaidX Logo"
-                          className="w-6 h-6 rounded-[22.5%] shadow-sm"
-                        />
-                        <span className="font-bold text-sm tracking-tight text-[#090B12] dark:text-white">
-                          PaidX Checkout
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-700/50 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>Ready to scan</span>
-                      </div>
-                    </div>
-
-                    {/* QR Code Presentation Box */}
-                    <div className="my-5 flex flex-col items-center">
-                      <div className="relative p-3.5 bg-white rounded-xl border border-gray-200 dark:border-brand-cyan/40 shadow-inner group">
-                        {qrDataUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={qrDataUrl}
-                            alt="PaidX Dynamic Payment QR"
-                            className="w-52 h-52 object-contain rounded-lg"
-                          />
-                        ) : (
-                          <div className="w-52 h-52 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-lg" />
-                        )}
-                        {/* Center Coin Badge inside QR */}
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <div className="p-1.5 bg-white rounded-full shadow-md border border-gray-200">
-                            <BaseChainIcon size={26} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center gap-2 text-xs text-light-text-secondary dark:text-dark-text-muted">
-                        <UsdcIcon size={14} />
-                        <span>USDC on Base • Scan with any Web3 wallet</span>
-                      </div>
-                    </div>
-
-                    {/* Copyable Payment Link Input */}
-                    <div className="relative flex items-center mb-4">
-                      <input
-                        type="text"
-                        readOnly
-                        value={paymentUri}
-                        className="w-full text-xs font-mono py-2 pl-3 pr-10 rounded-lg bg-light-secondary dark:bg-[#071022] border border-light-border dark:border-white/10 text-light-text-secondary dark:text-dark-text-secondary focus:outline-none"
-                      />
-                      <button
-                        onClick={handleCopy}
-                        className="absolute right-1.5 p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-white/10 text-light-text-secondary dark:text-dark-text-muted transition-colors"
-                        title="Copy payment URI"
-                      >
-                        {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                      </button>
-                    </div>
-
-                    {/* Timer & Total Price Row */}
-                    <div className="flex items-center justify-between py-2 text-xs border-t border-gray-100 dark:border-white/10">
-                      <div className="flex items-center gap-1.5 text-light-text-secondary dark:text-dark-text-muted">
-                        <span>Time Left</span>
-                        <span className="font-mono font-semibold text-brand-coral bg-brand-coral/10 px-2 py-0.5 rounded">
-                          {formatTimer(timeLeft)}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-light-text-muted dark:text-dark-text-muted mr-2">Total Price</span>
-                        <span className="font-bold text-base text-[#090B12] dark:text-white">$135.00 USDC</span>
-                      </div>
-                    </div>
-
-                    {/* Direct Wallet Action */}
-                    <a
-                      href={paymentUri}
-                      className="mt-4 w-full py-3 rounded-xl border border-brand-blue text-brand-blue hover:bg-brand-blue hover:text-white dark:border-brand-cyan dark:text-brand-cyan dark:hover:bg-brand-cyan dark:hover:text-[#050B1B] text-center text-sm font-semibold transition-all duration-200 block shadow-sm"
+                  {/* Bottom Merchant Action: Navy blue button matching Image 1 */}
+                  <div className="pt-2.5">
+                    <div
+                      className="w-auto px-3.5 py-2 rounded-[8px] bg-[#142C65] text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm cursor-default select-none"
                     >
-                      Pay in Wallet
-                    </a>
+                      <span className="text-gray-200 font-normal">Pay with</span>
+                      <span className="font-bold tracking-tight text-white">PaidX</span>
+                    </div>
                   </div>
                 </div>
+
+                {/* 2. Foreground Checkout Card: BitPay-style PaidX Checkout Interface (overlaps toward right) */}
+                <div className="absolute right-0 top-0 w-[72%] sm:w-[280px] bg-white dark:bg-[#0D1A34] rounded-2xl border border-[#E5E7EB] dark:border-white/15 shadow-[0_20px_45px_-10px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_20px_45px_-10px_rgba(0,0,0,0.6)] p-3.5 sm:p-4 z-20 transition-transform">
+                  
+                  {/* Top Bar: Back arrow, Centered Title, Right Logo */}
+                  <div className="flex items-center justify-between pb-2">
+                    <div
+                      className="p-1 -ml-1 text-gray-500 dark:text-gray-400 cursor-default select-none"
+                      aria-hidden="true"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-semibold text-[#111827] dark:text-white tracking-tight">
+                      PaidX
+                    </span>
+                    <div className="w-5 h-5 rounded-full overflow-hidden shadow-sm flex items-center justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src="/logo.png"
+                        alt="PaidX Logo"
+                        className="w-full h-full object-cover rounded-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Blue accent indicator line under header (matched to Image 1) */}
+                  <div className="h-[2px] bg-[#1749F5] w-full rounded-full mb-3" />
+
+                  {/* Dynamic QR Code in Soft Rounded Inner Container */}
+                  <div className="rounded-xl border border-[#E5E7EB] dark:border-white/10 p-2.5 bg-white dark:bg-[#081224] flex items-center justify-center relative mb-2.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+                    {qrDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={qrDataUrl}
+                        alt="PaidX Dynamic Checkout QR"
+                        className="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-md"
+                      />
+                    ) : (
+                      <div className="w-36 h-36 sm:w-40 sm:h-40 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-md" />
+                    )}
+
+                    {/* Center Circular Badge inside QR */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden shadow-md border-2 border-white dark:border-[#081224] bg-white flex items-center justify-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src="/logo.png"
+                          alt="PaidX Logo"
+                          className="w-full h-full object-cover rounded-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment URL Input / Copy Box */}
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-[8px] border border-[#E5E7EB] dark:border-white/10 bg-[#FAFAFA] dark:bg-[#081224] text-[10px] font-mono text-[#475467] dark:text-[#A9B9D5] mb-2.5 select-none">
+                    <span className="truncate max-w-[180px]">{displayUri}</span>
+                    <div
+                      className="p-1 text-gray-400 dark:text-gray-500 cursor-default select-none"
+                      title="Payment Link"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+
+                  {/* Metadata Rows: Time Left & Total Price */}
+                  <div className="border-t border-[#F0F2F5] dark:border-white/10 pt-2 space-y-1 text-xs">
+                    <div className="flex justify-between items-center text-[#6B7280] dark:text-[#94A3B8]">
+                      <span className="text-[11px]">Time Left</span>
+                      <span className="font-mono text-xs font-medium text-[#111827] dark:text-white">
+                        {CONST_TIME_LEFT}
+                      </span>
+                    </div>
+                    <div className="border-t border-[#F0F2F5] dark:border-white/5 my-0.5" />
+                    <div className="flex justify-between items-center text-[#6B7280] dark:text-[#94A3B8]">
+                      <span className="text-[11px]">Total Price</span>
+                      <span className="font-semibold text-xs text-[#111827] dark:text-white">
+                        $8.50 USDC
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action CTA: Pay in Wallet (Illustration Preview - non-actionable) */}
+                  <div
+                    className="mt-3 w-full py-2.5 rounded-[8px] border border-[#1749F5] text-[#1749F5] bg-white dark:bg-transparent dark:border-[#5B8EFF] dark:text-[#5B8EFF] text-center text-xs font-semibold tracking-wide block shadow-sm cursor-default select-none"
+                  >
+                    Pay in Wallet
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>

@@ -54,7 +54,7 @@ export function Footer() {
               <img
                 src="/logo.svg"
                 alt="PaidX"
-                className="w-8 h-8 rounded-[22.5%] shadow-sm"
+                className="w-8 h-8 rounded-none shadow-sm"
               />
               <span className="font-extrabold text-2xl tracking-tight text-white">
                 Paid<span className="text-white">X</span>
@@ -117,7 +117,7 @@ export function Footer() {
               </li>
               <li>
                 <a href="#why-paidx" className="hover:text-brand-cyan transition-colors">
-                  Fiat Settlement
+                  USDC Settlement
                 </a>
               </li>
               <li>

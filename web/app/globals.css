@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -38,7 +40,7 @@
   body {
     background-color: var(--bg-primary);
     color: var(--text-body);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--font-archivo), "Archivo", "Archivo Placeholder", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     transition: background-color 0.25s ease, color 0.25s ease;
     overflow-x: hidden;
   }
@@ -81,4 +83,93 @@
 
 .animate-pulse-subtle {
   animation: pulse-subtle 4s ease-in-out infinite;
+}
+
+/* PaidX landing page visual system */
+.landing-page {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f7fc;
+  --bg-soft: #eef0ff;
+  --card-bg: #ffffff;
+  --card-alt: #eef0ff;
+  --text-primary: #080808;
+  --text-body: #475467;
+  --text-secondary: #69748b;
+  --text-muted: #929bb0;
+  --border-subtle: #e8ebf3;
+  font-family: var(--font-archivo), "Archivo", "Archivo Placeholder", sans-serif;
+  letter-spacing: -0.012em;
+}
+
+.dark .landing-page {
+  --bg-primary: #050B1B;
+  --bg-secondary: #09152D;
+  --bg-soft: #0E1B38;
+  --card-bg: #101F3B;
+  --card-alt: #142443;
+  --text-primary: #F5F8FF;
+  --text-body: #D3DEF1;
+  --text-secondary: #A9B9D5;
+  --text-muted: #7184A6;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+}
+
+:not(.dark) .landing-page h1,
+:not(.dark) .landing-page h2,
+:not(.dark) .landing-page h3,
+:not(.dark) .landing-page h4 {
+  color: #080808;
+  letter-spacing: -0.02em;
+  line-height: 1.14;
+}
+
+.dark .landing-page h1,
+.dark .landing-page h2,
+.dark .landing-page h3,
+.dark .landing-page h4 {
+  color: #F5F8FF;
+  letter-spacing: -0.02em;
+  line-height: 1.14;
+}
+
+.landing-page p,
+.landing-page li,
+.landing-page span {
+  font-family: inherit;
+}
+
+.landing-page section [class*="rounded-2xl"] {
+  border-radius: 20px;
+  border-color: #e8ebf3;
+}
+
+.landing-page section [class*="shadow-xl"],
+.landing-page section [class*="shadow-2xl"] {
+  box-shadow: 0 16px 45px rgba(31, 45, 88, .09);
+}
+
+.landing-page section [class*="bg-[#F7F8FC]"],
+.landing-page section [class*="bg-[#F0F2FF]"],
+.landing-page section [class*="bg-light-secondary"] {
+  background-color: #eef0ff !important;
+}
+
+.landing-page section [class*="border-light-border"] {
+  border-color: #e5e9f2 !important;
+}
+
+.landing-page footer {
+  background: #07132b !important;
+  color: #fff;
+  letter-spacing: 0;
+}
+
+.landing-page footer h3,
+.landing-page footer h4 {
+  color: #fff !important;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 640px) {
+  .landing-page h1 { letter-spacing: -0.035em; }
 }
