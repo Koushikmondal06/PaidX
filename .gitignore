@@ -64,9 +64,10 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.neon
+paidx-audit-export*
+paidx-final-remediation-audit.zip
 
 # Media & Assets
 v1-images/
 prompts/
-
-
