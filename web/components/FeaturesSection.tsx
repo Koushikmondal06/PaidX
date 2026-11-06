@@ -10,9 +10,6 @@ export function FeaturesSection() {
         
         {/* Section Heading: Elegant, lightweight, centered matching BitPay design */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-[#2045E8] bg-[#DBE2FC] dark:text-brand-cyan dark:bg-brand-cyan/15">
-            <span>Hardware & Software In Harmony</span>
-          </div>
           <h2 className="font-archivo font-normal text-3xl sm:text-4xl lg:text-[42px] text-[#111111] dark:text-[#F5F8FF] leading-[1.2] tracking-[-0.015em]">
             Flexible point of sale infrastructure for physical retail
           </h2>

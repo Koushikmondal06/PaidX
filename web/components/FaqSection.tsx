@@ -59,43 +59,55 @@ export function FaqSection() {
   };
 
   return (
-    <section className="py-24 bg-[#FFFFFF] dark:bg-[#050B1B] transition-colors duration-300">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-brand-blue bg-brand-blue/10 dark:text-brand-cyan dark:bg-brand-cyan/15">
-            <span>Frequently Asked Questions</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#090B12] dark:text-[#F5F8FF]">
+    <section id="faq" className="w-full py-20 md:py-24 bg-white dark:bg-[#050B1B] transition-colors duration-300 overflow-x-hidden">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header without badge: naturally moved up */}
+        <div className="text-center space-y-3 sm:space-y-3.5 max-w-3xl mx-auto">
+          <h2 className="font-archivo font-medium sm:font-semibold text-2xl sm:text-3xl lg:text-[38px] text-[#111111] dark:text-[#F5F8FF] leading-[1.25] tracking-[-0.015em]">
             Everything you need to know about PaidX
           </h2>
-          <p className="text-base text-light-text-secondary dark:text-dark-text-secondary">
+          <p className="font-archivo text-[17px] sm:text-[18px] text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
             Common questions regarding NFC tap-to-pay, session limits, and Base L2 settlement.
           </p>
         </div>
 
         {/* Accordion List */}
-        <div className="divide-y divide-gray-200/80 dark:divide-white/10 border-y border-gray-200/80 dark:border-white/10">
+        <div className="mt-12 sm:mt-16 divide-y divide-[#E2E8F0] dark:divide-white/10 border-y border-[#E2E8F0] dark:border-white/10">
           {faqs.map((faq, idx) => {
             const isOpen = openIndex === idx;
             return (
-              <div key={idx} className="py-5">
+              <div key={idx} className="py-5 sm:py-6">
                 <button
+                  type="button"
                   onClick={() => toggle(idx)}
-                  className="w-full flex items-center justify-between text-left gap-4 group focus:outline-none"
+                  aria-expanded={isOpen}
+                  aria-controls={`faq-answer-${idx}`}
+                  className="w-full flex items-center justify-between text-left gap-4 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2045E8] rounded-md transition-colors"
                 >
-                  <span className="text-lg font-bold text-light-text-primary dark:text-[#F5F8FF] group-hover:text-brand-blue dark:group-hover:text-brand-cyan transition-colors">
+                  <span className="font-archivo font-medium sm:font-semibold text-[16px] sm:text-[17px] text-[#111111] dark:text-[#F5F8FF] group-hover:text-[#2045E8] dark:group-hover:text-[#5B8EFF] transition-colors leading-snug min-w-0 pr-2">
                     {faq.question}
                   </span>
-                  <div className="p-1 rounded-full text-brand-blue dark:text-brand-cyan group-hover:bg-light-soft dark:group-hover:bg-dark-elevated transition-colors shrink-0">
-                    {isOpen ? <Minus className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                  <div className="shrink-0 p-1 flex items-center justify-center text-[#2045E8] dark:text-[#5B8EFF] transition-colors">
+                    {isOpen ? (
+                      <Minus className="w-5 h-5 text-[#2045E8] dark:text-[#5B8EFF]" strokeWidth={2.25} />
+                    ) : (
+                      <Plus className="w-5 h-5 text-[#2045E8] dark:text-[#5B8EFF]" strokeWidth={2.25} />
+                    )}
                   </div>
                 </button>
 
-                {isOpen && (
-                  <div className="mt-3.5 pr-8 text-sm sm:text-base text-light-text-body dark:text-dark-text-secondary leading-relaxed animate-in fade-in-50 duration-200">
-                    {faq.answer}
+                <div
+                  id={`faq-answer-${idx}`}
+                  className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out ${
+                    isOpen ? 'grid-rows-[1fr] opacity-100 mt-3.5 sm:mt-4' : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden pr-4 sm:pr-12">
+                    <p className="font-archivo text-[15px] sm:text-[16px] text-[#334155] dark:text-[#94A3B8] leading-[1.65]">
+                      {faq.answer}
+                    </p>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}

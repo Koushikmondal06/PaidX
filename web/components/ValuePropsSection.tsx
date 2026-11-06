@@ -139,7 +139,7 @@ export function ValuePropsSection() {
                     <div className="w-5 h-5 rounded-full overflow-hidden shadow-sm flex items-center justify-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src="/logo.png"
+                        src="/logo-02.png"
                         alt="PaidX Logo"
                         className="w-full h-full object-cover rounded-full"
                       />
@@ -167,7 +167,7 @@ export function ValuePropsSection() {
                       <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden shadow-md border-2 border-white dark:border-[#081224] bg-white flex items-center justify-center">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src="/logo.png"
+                          src="/logo-02.png"
                           alt="PaidX Logo"
                           className="w-full h-full object-cover rounded-full"
                         />
