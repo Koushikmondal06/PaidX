@@ -606,10 +606,10 @@ export default function OnboardingPage() {
               <div key={s} className="flex items-center gap-1">
                 <div
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${s < step
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                      : s === step
-                        ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
-                        : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                    : s === step
+                      ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
+                      : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
                     }`}
                 >
                   {s < step ? '✓' : s}
@@ -805,8 +805,8 @@ export default function OnboardingPage() {
                       setIsCustomLimit(false);
                     }}
                     className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${!isCustomLimit && spendingLimit === preset
-                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                        : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                      : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
                       }`}
                   >
                     ${preset}
@@ -848,8 +848,8 @@ export default function OnboardingPage() {
                     type="button"
                     onClick={() => setExpiryDays(exp.val)}
                     className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${expiryDays === exp.val
-                        ? 'bg-indigo-600 text-white border-indigo-500'
-                        : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
+                      ? 'bg-indigo-600 text-white border-indigo-500'
+                      : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
                       }`}
                   >
                     {exp.label}
