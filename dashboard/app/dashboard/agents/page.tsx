@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   ExternalLink,
   Copy,
+  Check,
   Clock,
   Trash2,
   Sliders,
@@ -31,6 +32,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { HEDERA_TESTNET_CHAIN_PARAMS } from '@/lib/hedera/chain';
+import { getPublicMcpServerUrl, buildMcpClientConfig } from '@/lib/config/mcp';
 
 interface AgentItem {
   id: string;
@@ -120,6 +122,95 @@ export default function AgentWalletPage() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [agentConnectError, setAgentConnectError] = useState<string | null>(null);
+
+  // MCP Success Modal & Connection Test State
+  const [copiedConfig, setCopiedConfig] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [isTestingMcp, setIsTestingMcp] = useState(false);
+  const [mcpTestResult, setMcpTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    mcpUrl?: string;
+    serverInfo?: any;
+    protocolVersion?: string;
+  } | null>(null);
+
+  const publicMcpUrl = getPublicMcpServerUrl();
+
+  const copyToClipboard = (text: string, type: 'config' | 'token' | 'url') => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      if (type === 'config') {
+        setCopiedConfig(true);
+        setTimeout(() => setCopiedConfig(false), 2000);
+      } else if (type === 'token') {
+        setCopiedToken(true);
+        setTimeout(() => setCopiedToken(false), 2000);
+      } else if (type === 'url') {
+        setCopiedUrl(true);
+        setTimeout(() => setCopiedUrl(false), 2000);
+      }
+    }
+  };
+
+  const handleCloseConnectModal = () => {
+    setShowConnectModal(false);
+    // Securely wipe raw agent token from frontend state so it cannot be viewed again
+    setCreatedToken(null);
+    setMcpTestResult(null);
+    setCopiedConfig(false);
+    setCopiedToken(false);
+    setCopiedUrl(false);
+    setAgentConnectError(null);
+  };
+
+  const handleTestMcpConnection = async () => {
+    if (!createdToken) return;
+    setIsTestingMcp(true);
+    setMcpTestResult(null);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const { data: authSession } = await supabase.auth.getSession();
+      const token = authSession?.session?.access_token;
+
+      const res = await fetch('/api/agents/test-mcp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ token: createdToken }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setMcpTestResult({
+          success: false,
+          error: data.error || 'Failed to verify MCP server connection',
+          mcpUrl: data.mcpUrl || publicMcpUrl,
+        });
+      } else {
+        setMcpTestResult({
+          success: true,
+          message: data.message || 'Connected successfully to MCP server.',
+          mcpUrl: data.mcpUrl,
+          serverInfo: data.serverInfo,
+          protocolVersion: data.protocolVersion,
+        });
+      }
+    } catch (err: unknown) {
+      setMcpTestResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Network error testing MCP connection',
+        mcpUrl: publicMcpUrl,
+      });
+    } finally {
+      setIsTestingMcp(false);
+    }
+  };
 
   // Conversational Chat Tester State
   const [chatPrompt, setChatPrompt] = useState('Send 5 USDC to 0.0.123456');
@@ -1078,52 +1169,141 @@ export default function AgentWalletPage() {
       {/* Connect AI Agent Modal */}
       <Modal
         isOpen={showConnectModal}
-        onClose={() => setShowConnectModal(false)}
+        onClose={handleCloseConnectModal}
         title={createdToken ? 'Agent Connected Successfully' : 'Connect New AI Agent'}
       >
         {createdToken ? (
           <div className="space-y-4 font-mono text-xs">
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Agent token minted. Copy and store this token securely.</span>
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+              <div>
+                <div className="font-semibold text-emerald-300">Agent Token Minted & Ready to Connect</div>
+                <div className="text-[11px] text-emerald-400/80 mt-0.5">
+                  This Bearer token is shown only once. Copy it now and configure your AI client (Claude Desktop, Cursor, ChatGPT).
+                </div>
+              </div>
             </div>
 
+            {/* Public MCP Server Endpoint */}
             <div className="space-y-1">
-              <label className="text-[#AAAAAA] block">PaidX Agent Bearer Token (shown once):</label>
+              <div className="flex items-center justify-between text-[#AAAAAA]">
+                <label className="block text-xs">Public MCP Server Endpoint:</label>
+                <span className="text-[10px] text-[#5465FF] bg-[#5465FF]/10 px-1.5 py-0.5 rounded border border-[#5465FF]/20 font-mono">
+                  Streamable HTTP
+                </span>
+              </div>
               <div className="flex gap-2">
                 <input
                   readOnly
-                  value={createdToken}
-                  className="flex-1 bg-[#071013] border border-[#1A2E38] rounded-lg px-3 py-2 text-[#00F5D4] select-all font-mono"
+                  value={publicMcpUrl}
+                  className="flex-1 bg-[#071013] border border-[#1A2E38] rounded-lg px-3 py-2 text-[#00F5D4] select-all font-mono text-xs"
                 />
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(createdToken);
-                    alert('Token copied to clipboard!');
-                  }}
+                  size="sm"
+                  type="button"
+                  onClick={() => copyToClipboard(publicMcpUrl, 'url')}
                 >
-                  <Copy className="w-3.5 h-3.5 mr-1" />
-                  Copy
+                  {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-400 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                  {copiedUrl ? 'Copied' : 'Copy'}
                 </Button>
               </div>
             </div>
 
+            {/* PaidX Agent Bearer Token */}
+            <div className="space-y-1">
+              <label className="text-[#AAAAAA] block text-xs">PaidX Agent Bearer Token (Shown Once):</label>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={createdToken}
+                  className="flex-1 bg-[#071013] border border-[#1A2E38] rounded-lg px-3 py-2 text-[#DFE0E2] select-all font-mono text-xs break-all"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => copyToClipboard(createdToken, 'token')}
+                >
+                  {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-400 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                  {copiedToken ? 'Token Copied!' : 'Copy Token'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Claude Desktop / Cursor MCP Setup */}
             <div className="p-3 bg-[#071013] border border-[#1A2E38] rounded-lg text-[#AAAAAA] space-y-2">
-              <div className="font-semibold text-[#DFE0E2]">Claude Desktop / Cursor MCP Setup:</div>
-              <pre className="text-[10px] text-[#DFE0E2] bg-[#0E1D24] p-2 rounded overflow-x-auto">
-{`"mcpServers": {
-  "paidx": {
-    "url": "http://localhost:3000/api/mcp",
-    "headers": {
-      "Authorization": "Bearer ${createdToken}"
-    }
-  }
-}`}
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-[#DFE0E2]">Claude Desktop / Cursor MCP Setup:</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() =>
+                    copyToClipboard(
+                      JSON.stringify(buildMcpClientConfig(createdToken, publicMcpUrl), null, 2),
+                      'config'
+                    )
+                  }
+                  className="text-[11px] h-7 px-2.5"
+                >
+                  {copiedConfig ? (
+                    <Check className="w-3 h-3 text-emerald-400 mr-1" />
+                  ) : (
+                    <Copy className="w-3 h-3 mr-1" />
+                  )}
+                  {copiedConfig ? 'Config Copied!' : 'Copy MCP Configuration'}
+                </Button>
+              </div>
+              <pre className="text-[11px] text-[#DFE0E2] bg-[#0E1D24] p-3 rounded overflow-x-auto whitespace-pre font-mono border border-[#1A2E38]/60">
+{JSON.stringify(buildMcpClientConfig(createdToken, publicMcpUrl), null, 2)}
               </pre>
             </div>
 
-            <Button variant="primary" className="w-full" onClick={() => setShowConnectModal(false)}>
+            {/* MCP Connection Test Section */}
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                type="button"
+                className="w-full flex items-center justify-center gap-2 border-[#1A2E38] hover:border-[#5465FF]/50 text-[#DFE0E2]"
+                onClick={handleTestMcpConnection}
+                disabled={isTestingMcp}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingMcp ? 'animate-spin text-[#5465FF]' : ''}`} />
+                {isTestingMcp ? 'Verifying MCP Connection...' : 'Test MCP Connection'}
+              </Button>
+
+              {mcpTestResult && (
+                <div
+                  className={`p-3 rounded-lg border text-xs font-mono space-y-1 ${
+                    mcpTestResult.success
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-semibold">
+                    {mcpTestResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                    )}
+                    <span>{mcpTestResult.success ? 'MCP Connection Verified' : 'MCP Test Failed'}</span>
+                  </div>
+                  <p className="text-[11px] opacity-90 break-all">
+                    {mcpTestResult.success ? mcpTestResult.message : mcpTestResult.error}
+                  </p>
+                  {mcpTestResult.success && mcpTestResult.mcpUrl && (
+                    <div className="text-[10px] text-[#AAAAAA] pt-1 border-t border-emerald-500/20 flex flex-wrap gap-x-3">
+                      <span>Endpoint: {mcpTestResult.mcpUrl}</span>
+                      {mcpTestResult.protocolVersion && <span>Protocol: {mcpTestResult.protocolVersion}</span>}
+                      {mcpTestResult.serverInfo?.name && <span>Server: {mcpTestResult.serverInfo.name}</span>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Button variant="primary" className="w-full" onClick={handleCloseConnectModal}>
               Done
             </Button>
           </div>
