@@ -48,11 +48,11 @@
 #endif
 
 #ifndef PAIDX_WIFI_SSID
-  #define PAIDX_WIFI_SSID "ETHGlobal"
+  #define PAIDX_WIFI_SSID "0day"
 #endif
 
 #ifndef PAIDX_WIFI_PASSWORD
-  #define PAIDX_WIFI_PASSWORD "www.ethgobal.com"
+  #define PAIDX_WIFI_PASSWORD "Nwolf@123"
 #endif
 
 #ifndef PAIDX_API_BASE
@@ -154,8 +154,8 @@ static uint8_t     lastWifiStage     = 255;
 static uint32_t    lastWifiAnimMs    = 0;
 static uint32_t    lastWifiRetryMs   = 0;
 static const char* wifiStageMsg[4] = {
-  "Searching for 'ETHGlobal' AP",
-  "Connecting to ETHGlobal AP",
+  "Searching for '0day' AP",
+  "Connecting to 0day AP",
   "Authorizing credentials",
   "Acquiring DHCP IP lease"
 };

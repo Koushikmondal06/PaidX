@@ -9,8 +9,8 @@
 
 #pragma once
 
-#define PAIDX_WIFI_SSID     "ETHGlobal"
-#define PAIDX_WIFI_PASSWORD "www.ethgobal.com"
+#define PAIDX_WIFI_SSID     "0day"
+#define PAIDX_WIFI_PASSWORD "Nwolf@123"
 
 // Device credentials — minted from pos_devices (8.2 authenticated device path).
 // After running supabase/migrations/20261031200000_text_ids_demo_001.sql the demo
