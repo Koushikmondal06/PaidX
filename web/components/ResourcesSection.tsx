@@ -1,20 +1,20 @@
 'use client';
 
 import React from 'react';
-import { BookOpen, FileText, ArrowRight, Store, Globe } from 'lucide-react';
+import { Cpu, ShieldCheck, ArrowRight, Store, CreditCard } from 'lucide-react';
 
 export function ResourcesSection() {
   return (
     <section className="py-24 bg-[#F7F8FC] dark:bg-[#09152D] transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-20">
-        {/* Top: Learn more about crypto payments */}
+        {/* Top: Learn more about PaidX */}
         <div className="space-y-10">
           <div className="text-center max-w-2xl mx-auto space-y-3">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-[#090B12] dark:text-[#F5F8FF]">
-              Learn more about crypto payments
+              Developer & Merchant Guides
             </h2>
             <p className="text-base text-light-text-secondary dark:text-dark-text-secondary">
-              Guides, research, and technical reports for merchants navigating digital commerce.
+              Technical documentation and setup guides for the PaidX point-of-sale ecosystem.
             </p>
           </div>
 
@@ -23,14 +23,14 @@ export function ResourcesSection() {
             <div className="p-8 rounded-2xl bg-white dark:bg-[#101F3B] border border-light-border dark:border-white/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-6">
               <div className="space-y-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-brand-blue dark:text-brand-cyan flex items-center justify-center">
-                  <FileText className="w-5 h-5" />
+                  <Cpu className="w-5 h-5" />
                 </div>
                 <h3 className="text-2xl font-bold text-light-text-primary dark:text-white">
-                  50 Questions to Ask Payment Processors
+                  ESP32 Hardware Terminal Provisioning
                 </h3>
                 <p className="text-sm text-light-text-body dark:text-dark-text-secondary leading-relaxed">
-                  Arm yourself with the essential questions to ask when vetting crypto point-of-sale
-                  providers, from settlement guarantees to fee structures.
+                  Step-by-step firmware guide for provisioning ESP32 boards with 2.8&quot; TFT touchscreens,
+                  PN532 NFC reader modules, and Wi-Fi pairing to your store.
                 </p>
               </div>
               <a
@@ -39,7 +39,7 @@ export function ResourcesSection() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-sm font-bold text-brand-blue dark:text-brand-cyan hover:underline"
               >
-                Read the Merchant Guide
+                Read Hardware Guide
                 <ArrowRight className="w-4 h-4" />
               </a>
             </div>
@@ -48,14 +48,14 @@ export function ResourcesSection() {
             <div className="p-8 rounded-2xl bg-white dark:bg-[#101F3B] border border-light-border dark:border-white/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-6">
               <div className="space-y-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                  <BookOpen className="w-5 h-5" />
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
                 <h3 className="text-2xl font-bold text-light-text-primary dark:text-white">
-                  State of Stablecoins 2026 Report
+                  ERC-4337 Session Keys &amp; Tap Limits
                 </h3>
                 <p className="text-sm text-light-text-body dark:text-dark-text-secondary leading-relaxed">
-                  Discover the latest retail payment volume data and why brick-and-mortar merchants are
-                  adopting USDC on Layer-2 networks to replace credit rails.
+                  Understand how Account Abstraction session keys grant scoped daily allowances,
+                  enabling instant tap-to-pay without phone confirmation popups.
                 </p>
               </div>
               <a
@@ -64,7 +64,7 @@ export function ResourcesSection() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-sm font-bold text-brand-blue dark:text-brand-cyan hover:underline"
               >
-                Download the Research Report
+                Explore Smart Accounts
                 <ArrowRight className="w-4 h-4" />
               </a>
             </div>
@@ -74,14 +74,18 @@ export function ResourcesSection() {
         {/* Bottom: Dual Solution Portals */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
           <div className="p-8 rounded-2xl bg-white dark:bg-[#101F3B] border border-light-border dark:border-white/10 space-y-4">
-            <span className="text-xs font-mono font-bold tracking-wider uppercase text-brand-blue dark:text-brand-cyan">
-              Accept Cryptocurrency Payments
-            </span>
+            <div className="flex items-center gap-2 text-brand-blue dark:text-brand-cyan">
+              <Store className="w-5 h-5" />
+              <span className="text-xs font-mono font-bold tracking-wider uppercase">
+                For Retail Merchants
+              </span>
+            </div>
             <h3 className="text-2xl sm:text-3xl font-bold text-light-text-primary dark:text-white">
-              Receive payments in crypto, settle your way
+              Turn your counter into a high-speed crypto register
             </h3>
             <p className="text-sm text-light-text-body dark:text-dark-text-secondary leading-relaxed">
-              Integrate with web checkout, mobile virtual POS, or countertop ESP32 hardware terminals.
+              Launch our web Virtual POS in seconds on an iPad, or deploy dedicated ESP32 terminals
+              with instant USDC settlement on Base L2.
             </p>
             <a
               href="https://console.paidx.cc"
@@ -89,21 +93,24 @@ export function ResourcesSection() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm font-bold text-brand-blue dark:text-brand-cyan hover:underline pt-2"
             >
-              Explore In-Store Payments
+              Open Merchant Portal
               <ArrowRight className="w-4 h-4" />
             </a>
           </div>
 
           <div className="p-8 rounded-2xl bg-white dark:bg-[#101F3B] border border-light-border dark:border-white/10 space-y-4">
-            <span className="text-xs font-mono font-bold tracking-wider uppercase text-brand-violet">
-              Send Crypto Payouts
-            </span>
+            <div className="flex items-center gap-2 text-brand-violet">
+              <CreditCard className="w-5 h-5" />
+              <span className="text-xs font-mono font-bold tracking-wider uppercase">
+                For Smart Card Holders
+              </span>
+            </div>
             <h3 className="text-2xl sm:text-3xl font-bold text-light-text-primary dark:text-white">
-              Pay anyone, anywhere, without touching crypto
+              Carry your crypto in your physical wallet
             </h3>
             <p className="text-sm text-light-text-body dark:text-dark-text-secondary leading-relaxed">
-              Disburse mass vendor payments, supplier invoices, and contractor rewards globally using
-              programmatic rails.
+              Tap to buy chai, groceries, or dinner. Set daily spending limits, freeze cards anytime,
+              and enjoy zero gas fees sponsored by our paymaster.
             </p>
             <a
               href="https://console.paidx.cc"
@@ -111,7 +118,7 @@ export function ResourcesSection() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm font-bold text-brand-blue dark:text-brand-cyan hover:underline pt-2"
             >
-              Explore Batch Payouts
+              Get Your PaidX Card
               <ArrowRight className="w-4 h-4" />
             </a>
           </div>

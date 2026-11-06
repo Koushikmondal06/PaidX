@@ -64,7 +64,8 @@ const config: Config = {
         'card-dark': '0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['var(--font-archivo)', 'Archivo', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        archivo: ['var(--font-archivo)', 'Archivo', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
     },
   },

@@ -51,7 +51,7 @@ export function Navbar() {
           <img
             src="/logo.svg"
             alt="PaidX Logo"
-            className="w-8 h-8 rounded-[22.5%] shadow-sm transition-transform group-hover:scale-105"
+            className="w-8 h-8 rounded-none shadow-sm transition-transform group-hover:scale-105"
           />
           <span className="font-extrabold text-2xl tracking-tight text-[#090B12] dark:text-[#F5F8FF]">
             Paid<span className="text-[#090B12] dark:text-white">X</span>
