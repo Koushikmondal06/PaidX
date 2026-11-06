@@ -9,6 +9,9 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/approvals/execute
  * Executes an approved payment request on behalf of the authorized wallet.
+ * Strictly requires status === 'approved'.
+ * Rejects execution of unapproved 'approval_required' records.
+ * Uses the exact existing payment record and preserves original payment intent.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +19,7 @@ export async function POST(req: NextRequest) {
     if (auth.errorResponse) return auth.errorResponse;
     const user = auth.user;
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { paymentId } = body;
 
     if (!paymentId) {
@@ -35,9 +38,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Payment not found or unauthorized' }, { status: 404 });
     }
 
-    if (payment.status !== 'pending' && payment.status !== 'approval_required') {
+    // STRICT GUARD: Do not allow execution of an unapproved approval_required record
+    if (payment.status === 'approval_required') {
       return NextResponse.json(
-        { error: `Payment cannot be executed: current status is "${payment.status}"` },
+        {
+          error:
+            'Execution rejected: Payment is in "approval_required" status and has not been approved yet. Approve first before executing.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (payment.status !== 'approved') {
+      return NextResponse.json(
+        { error: `Payment cannot be executed: current status is "${payment.status}". Expected status: "approved".` },
         { status: 400 }
       );
     }
@@ -57,15 +71,24 @@ export async function POST(req: NextRequest) {
       walletAddress: wallet.address,
     };
 
-    // Calculate display amount from atomic
-    const displayAmount = fromAtomicUnits(payment.amount_atomic, 6);
+    // Calculate display amount from atomic units
+    const isHbar = payment.asset?.toUpperCase() === 'HBAR' || payment.asset_id === '0.0.0';
+    const decimals = isHbar ? 8 : 6;
+    const displayAmount = fromAtomicUnits(payment.amount_atomic, decimals);
 
+    // Extract original intent key from scoped idempotency_key
+    const originalIntentKey = payment.idempotency_key
+      ? payment.idempotency_key.replace(`${agent.id}:`, '')
+      : `approved-${payment.id}`;
+
+    // Execute payment reusing existing payment record and preserving original intent
     const result = await orchestrateAgentPayment(agentContext, {
       recipient: payment.recipient,
       amount: displayAmount,
       asset: payment.asset,
       network: payment.network as any,
-      idempotencyKey: `exec-${payment.id}`,
+      idempotencyKey: originalIntentKey,
+      existingPaymentId: payment.id,
     });
 
     return NextResponse.json(result);

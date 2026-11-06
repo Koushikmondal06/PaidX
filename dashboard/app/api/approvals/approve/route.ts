@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/approvals/approve
- * Human user approves a payment request that exceeded autonomous agent limits.
+ * Human user approves a payment request that was placed in approval_required state.
+ * Preserves the exact stored recipient, amount, asset, and network.
+ * Idempotently and atomically transitions status from 'approval_required' to 'approved'.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -14,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (auth.errorResponse) return auth.errorResponse;
     const user = auth.user;
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { paymentId } = body;
 
     if (!paymentId) {
@@ -33,6 +35,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Payment request not found or unauthorized' }, { status: 404 });
     }
 
+    // Ensure approval cannot be replayed or altered
+    if (payment.status === 'approved') {
+      return NextResponse.json({
+        success: true,
+        paymentId: payment.id,
+        status: 'approved',
+        message: 'Payment was already approved.',
+      });
+    }
+
     if (payment.status !== 'approval_required') {
       return NextResponse.json(
         { error: `Payment cannot be approved: current status is "${payment.status}"` },
@@ -40,19 +52,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Atomically transition from 'approval_required' to 'approved'
     const { data: updated, error: updateError } = await supabase
       .from('agent_payments')
       .update({
-        status: 'pending',
+        status: 'approved',
         failure_reason: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', paymentId)
+      .eq('status', 'approval_required') // Atomic conditional update
       .select()
       .single();
 
     if (updateError || !updated) {
-      return NextResponse.json({ error: updateError?.message || 'Failed to approve payment' }, { status: 500 });
+      return NextResponse.json(
+        { error: updateError?.message || 'Failed to approve payment: status may have changed' },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -60,6 +77,13 @@ export async function POST(req: NextRequest) {
       paymentId: updated.id,
       status: 'approved',
       message: 'Payment has been approved and is ready for execution.',
+      authorizedPayment: {
+        recipient: updated.recipient,
+        amountAtomic: updated.amount_atomic,
+        amountDisplay: updated.amount_display,
+        asset: updated.asset,
+        network: updated.network,
+      },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Server error';
