@@ -34,3 +34,4 @@ If you prefer to run migrations individually:
 5. **`05_payments.sql`**
    - Supports: On-chain transaction receipts and Etherscan linking
    - Adds `confirmed_at`, `user_op_hash`, and `failure_reason` to `payments`.
+

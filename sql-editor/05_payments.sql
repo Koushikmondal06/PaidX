@@ -11,3 +11,4 @@ CREATE INDEX IF NOT EXISTS idx_payments_user_id ON public.payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_merchant_id ON public.payments(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_payments_card_id ON public.payments(card_id);
 CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON public.payments(idempotency_key);
+

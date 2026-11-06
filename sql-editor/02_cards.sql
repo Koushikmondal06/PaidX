@@ -28,3 +28,4 @@ CREATE TRIGGER trg_sync_cards_tx_hash
 
 CREATE INDEX IF NOT EXISTS idx_cards_user_id ON public.cards(user_id);
 CREATE INDEX IF NOT EXISTS idx_cards_uid_hash ON public.cards(uid_hash);
+

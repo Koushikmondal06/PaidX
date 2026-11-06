@@ -43,3 +43,4 @@ DROP TRIGGER IF EXISTS trg_pos_devices_updated_at ON public.pos_devices;
 CREATE TRIGGER trg_pos_devices_updated_at
   BEFORE UPDATE ON public.pos_devices
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+

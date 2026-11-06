@@ -44,3 +44,4 @@ CREATE TRIGGER trg_sync_permissions_columns
 
 CREATE INDEX IF NOT EXISTS idx_permissions_user_id ON public.permissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_permissions_status ON public.permissions(status);
+

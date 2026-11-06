@@ -43,3 +43,4 @@ ON CONFLICT (id) DO UPDATE SET
   status = 'active',
   is_active = TRUE,
   updated_at = NOW();
+
