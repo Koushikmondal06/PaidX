@@ -381,18 +381,16 @@ export default function CardsAndLimitsPage() {
             {cards.map((card) => (
               <Card
                 key={card.id}
-                className={`border-[#1A2E38] space-y-4 relative overflow-hidden transition-all ${
-                  card.status === 'frozen' ? 'opacity-70 bg-[#071013]' : 'bg-[#0B161B]'
-                }`}
+                className={`border-[#1A2E38] space-y-4 relative overflow-hidden transition-all ${card.status === 'frozen' ? 'opacity-70 bg-[#071013]' : 'bg-[#0B161B]'
+                  }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
                     <div
-                      className={`p-2 rounded-lg ${
-                        card.status === 'active'
+                      className={`p-2 rounded-lg ${card.status === 'active'
                           ? 'bg-[#5465FF]/20 text-[#5465FF]'
                           : 'bg-rose-950/40 text-rose-400'
-                      }`}
+                        }`}
                     >
                       <CreditCard className="w-5 h-5" />
                     </div>

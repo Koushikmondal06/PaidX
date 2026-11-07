@@ -131,18 +131,19 @@ export async function POST(req: NextRequest) {
       }
 
       // Resolve merchant strictly from verified device association
-      const { data: mData, error: mError } = await supabase
-        .from('merchants')
-        .select('*')
-        .eq('id', posDevice.merchant_id)
-        .maybeSingle();
+      const isDeviceMerchantUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(posDevice.merchant_id || '');
+      const merchantQuery = supabase.from('merchants').select('*');
+      const { data: mData, error: mError } = isDeviceMerchantUuid
+        ? await merchantQuery.eq('id', posDevice.merchant_id).maybeSingle()
+        : await merchantQuery.eq('slug', posDevice.merchant_id || '#001').maybeSingle();
 
       if (mError || !mData) {
-        if (posDevice.merchant_id === '#001') {
+        if (posDevice.merchant_id === '#001' || !posDevice.merchant_id) {
           resolvedMerchant = {
-            id: '#001',
+            id: '00000000-0000-0000-0000-000000000001',
             name: 'Apex Retail',
-            payout_address: '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6', receiving_address: '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6',
+            payout_address: '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6',
+            receiving_address: '0x7B52dcb074EF9C189BDFb0c19bE7094C277a94F6',
             status: 'active',
           };
         } else {
@@ -365,12 +366,16 @@ export async function POST(req: NextRequest) {
       console.warn('[Payments] On-chain allowance check warning:', msg);
     }
 
+    // Ensure merchant_id is a valid UUID for the payments foreign key constraint
+    const isMerchantIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedMerchant.id || '');
+    const validMerchantUuid = isMerchantIdUuid ? resolvedMerchant.id : '00000000-0000-0000-0000-000000000001';
+
     // 7. Insert Payment record with status 'created'
     const { data: payment, error: insertError } = await supabase
       .from('payments')
       .insert({
         idempotency_key: idempotencyKey,
-        merchant_id: resolvedMerchant.id,
+        merchant_id: validMerchantUuid,
         user_id: card.user_id,
         card_id: card.id,
         permission_id: permission.id,

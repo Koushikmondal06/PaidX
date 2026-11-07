@@ -83,7 +83,7 @@ export default function ConsoleWalletPage() {
             setRelayerAddress(d.sessionAccountAddress as Address);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
     loadSession();
   }, []);
@@ -472,8 +472,8 @@ export default function ConsoleWalletPage() {
             {watchAssetStatus === 'success'
               ? 'USDC Added!'
               : watchAssetStatus === 'rejected'
-              ? 'Request Cancelled'
-              : 'Add USDC to MetaMask'}
+                ? 'Request Cancelled'
+                : 'Add USDC to MetaMask'}
           </Button>
         </div>
 
@@ -610,22 +610,20 @@ export default function ConsoleWalletPage() {
             <button
               type="button"
               onClick={() => setSelectedCurrency('USDC')}
-              className={`py-2 px-4 rounded-lg text-xs font-medium transition-all ${
-                selectedCurrency === 'USDC'
+              className={`py-2 px-4 rounded-lg text-xs font-medium transition-all ${selectedCurrency === 'USDC'
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
-              }`}
+                }`}
             >
               USDC (Circle Sepolia)
             </button>
             <button
               type="button"
               onClick={() => setSelectedCurrency('ETH')}
-              className={`py-2 px-4 rounded-lg text-xs font-medium transition-all ${
-                selectedCurrency === 'ETH'
+              className={`py-2 px-4 rounded-lg text-xs font-medium transition-all ${selectedCurrency === 'ETH'
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
-              }`}
+                }`}
             >
               ETH (Sepolia Native)
             </button>
