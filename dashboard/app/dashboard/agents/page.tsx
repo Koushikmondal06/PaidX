@@ -1250,17 +1250,13 @@ export default function AgentWalletPage() {
                 <p>
                   Link your MetaMask EVM wallet to PaidX on Hedera Testnet.
                 </p>
-                <div className="space-y-1 text-[11px] text-[#888888]">
-                  <div>• <span className="text-[#DFE0E2]">Network:</span> Hedera Testnet (Chain ID 296 / 0x128)</div>
-                  <div>• <span className="text-[#DFE0E2]">RPC:</span> https://testnet.hashio.io/api</div>
-                  <div>• <span className="text-[#DFE0E2]">Currency:</span> HBAR (18 decimals)</div>
-                  <div>• <span className="text-[#DFE0E2]">Explorer:</span> https://hashscan.io/testnet</div>
-                  <div>• <span className="text-[#DFE0E2]">Security:</span> Server-issued, single-use cryptographic challenge</div>
-                  <div>• <span className="text-[#DFE0E2]">Resolution:</span> Automatically resolves EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
-                <div className="space-y-1 text-[11px] pt-1">
-                  <div>• <strong className="text-[#111111] dark:text-white">Network:</strong> Hedera Testnet (Chain ID 296)</div>
-                  <div>• <strong className="text-[#111111] dark:text-white">RPC:</strong> https://testnet.hashio.io/api</div>
-                  <div>• <strong className="text-[#111111] dark:text-white">Resolution:</strong> Automatically maps EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
+                <div className="space-y-1 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                  <div>• <strong className="text-[#111111] dark:text-[#F5F8FF]">Network:</strong> Hedera Testnet (Chain ID 296 / 0x128)</div>
+                  <div>• <strong className="text-[#111111] dark:text-[#F5F8FF]">RPC:</strong> https://testnet.hashio.io/api</div>
+                  <div>• <strong className="text-[#111111] dark:text-[#F5F8FF]">Currency:</strong> HBAR (18 decimals)</div>
+                  <div>• <strong className="text-[#111111] dark:text-[#F5F8FF]">Explorer:</strong> https://hashscan.io/testnet</div>
+                  <div>• <strong className="text-[#111111] dark:text-[#F5F8FF]">Security:</strong> Server-issued, single-use cryptographic challenge</div>
+                  <div>• <strong className="text-[#111111] dark:text-[#F5F8FF]">Resolution:</strong> Automatically resolves EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
                 </div>
 
                 <div className="pt-2 border-t border-[#1A2E38] flex items-center justify-between">
@@ -1573,46 +1569,33 @@ export default function AgentWalletPage() {
               required
             />
 
-            <div className="p-3.5 bg-[#071013] border border-[#1A2E38] rounded-lg space-y-2.5">
+            <div className="p-3.5 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 rounded-xl space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-semibold text-[#DFE0E2] flex items-center gap-1.5">
+                  <div className="text-xs font-semibold text-[#111111] dark:text-[#F5F8FF] flex items-center gap-1.5">
                     Autonomous Payments
-                    <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                    <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
                       No MetaMask Popups
                     </span>
                   </div>
-                  <div className="text-[11px] text-[#AAAAAA]">
+                  <div className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
                     Allow agent to sign and settle payments autonomously within policy limits
                   </div>
-            <div className="flex items-center justify-between p-4 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 rounded-xl">
-              <div>
-                <div className="text-xs font-semibold text-[#111111] dark:text-[#F5F8FF]">
-                  Autonomous Execution
-                </div>
-                <div className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-                  Allow agent to pay up to daily budget without user prompt
                 </div>
                 <input
                   type="checkbox"
                   checked={autonomousEnabled}
                   onChange={(e) => setAutonomousEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-[#5465FF] rounded"
+                  className="w-4 h-4 accent-[#1749F5] rounded"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1A2E38]/60 text-[11px] font-mono text-[#AAAAAA]">
-                <div>Network: <span className="text-[#DFE0E2]">hedera:testnet (296)</span></div>
-                <div>Assets: <span className="text-[#DFE0E2]">USDC, HBAR</span></div>
-                <div>Signing Mode: <span className="text-emerald-400">MPC 2-of-3 Threshold</span></div>
-                <div>Revocation: <span className="text-amber-400">Instant 1-Click</span></div>
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0] dark:border-white/10 text-[11px] font-mono text-[#64748B] dark:text-[#94A3B8]">
+                <div>Network: <span className="text-[#111111] dark:text-[#F5F8FF]">hedera:testnet (296)</span></div>
+                <div>Assets: <span className="text-[#111111] dark:text-[#F5F8FF]">USDC, HBAR</span></div>
+                <div>Signing Mode: <span className="text-emerald-600 dark:text-emerald-400">MPC 2-of-3 Threshold</span></div>
+                <div>Revocation: <span className="text-amber-600 dark:text-amber-400">Instant 1-Click</span></div>
               </div>
-              <input
-                type="checkbox"
-                checked={autonomousEnabled}
-                onChange={(e) => setAutonomousEnabled(e.target.checked)}
-                className="w-4 h-4 accent-[#1749F5] rounded"
-              />
             </div>
 
             <div className="flex justify-end gap-2.5 pt-2">
