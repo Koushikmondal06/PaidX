@@ -78,6 +78,9 @@ export class DelegatedWalletSigningProvider implements IWalletSigningProvider {
   // Secure in-memory account key registry for dynamic agent sessions & test suites
   private accountKeyRegistry = new Map<string, PrivateKey>();
 
+  // Secure agent session key registry: accountId -> (agentId -> PrivateKey)
+  private delegatedSessionRegistry = new Map<string, Map<string, PrivateKey>>();
+
   /**
    * Registers a dedicated signing key for an account (e.g. during onboarding or automated tests).
    */
@@ -92,6 +95,66 @@ export class DelegatedWalletSigningProvider implements IWalletSigningProvider {
     }
 
     this.accountKeyRegistry.set(cleanId, privKey);
+  }
+
+  /**
+   * Registers a delegated agent session key granted by the user.
+   * Maps agentId and accountId to an isolated, separate agent-controlled private key.
+   */
+  public registerAgentSessionKey(
+    agentId: string,
+    accountId: string,
+    keyDerOrHex: string
+  ): PrivateKey {
+    const cleanId = accountId.trim();
+    let privKey: PrivateKey;
+
+    if (keyDerOrHex.startsWith('0x')) {
+      privKey = PrivateKey.fromStringECDSA(keyDerOrHex);
+    } else {
+      privKey = PrivateKey.fromString(keyDerOrHex);
+    }
+
+    if (!this.delegatedSessionRegistry.has(cleanId)) {
+      this.delegatedSessionRegistry.set(cleanId, new Map());
+    }
+    this.delegatedSessionRegistry.get(cleanId)!.set(agentId, privKey);
+
+    // Also register in accountKeyRegistry so canSign(cleanId) is true
+    this.accountKeyRegistry.set(cleanId, privKey);
+
+    return privKey;
+  }
+
+  /**
+   * Instantly unregisters an agent's delegated session key on revocation.
+   */
+  public unregisterAgentSessionKey(agentId: string): void {
+    for (const [accountId, agentMap] of this.delegatedSessionRegistry.entries()) {
+      if (agentMap.has(agentId)) {
+        agentMap.delete(agentId);
+        if (agentMap.size === 0) {
+          this.delegatedSessionRegistry.delete(accountId);
+          this.accountKeyRegistry.delete(accountId);
+        }
+      }
+    }
+  }
+
+  /**
+   * Verifies if a private key is an authorized delegated session key for the given account.
+   */
+  public isDelegatedSessionKey(accountId: string, key: PrivateKey): boolean {
+    const cleanId = accountId.trim();
+    const agentMap = this.delegatedSessionRegistry.get(cleanId);
+    if (!agentMap) return false;
+    const targetDer = key.publicKey.toStringDer();
+    for (const regKey of agentMap.values()) {
+      if (regKey.publicKey.toStringDer() === targetDer) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -222,7 +285,9 @@ export class DelegatedWalletSigningProvider implements IWalletSigningProvider {
       privateKey.publicKey
     );
 
-    if (!keyMatches) {
+    const isSessionKey = this.isDelegatedSessionKey(cleanId, privateKey);
+
+    if (!keyMatches && !isSessionKey) {
       throw new Error(
         `[Security Exception] Signer public key mismatch: The signer key for "${cleanId}" is not authorized by the on-chain key structure registered on Hedera Mirror Node.`
       );

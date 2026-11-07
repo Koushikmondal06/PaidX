@@ -45,6 +45,18 @@ export function getHederaClient(): Client {
 }
 
 /**
+ * Closes and resets the cached Hedera client (e.g. for teardown in tests).
+ */
+export function closeHederaClient(): void {
+  if (hederaClientInstance) {
+    try {
+      hederaClientInstance.close();
+    } catch {}
+    hederaClientInstance = null;
+  }
+}
+
+/**
  * Validates whether a given string is a valid Hedera Account ID (0.0.x)
  */
 export function isValidHederaAccountId(address: string): boolean {
