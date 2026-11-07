@@ -120,10 +120,10 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
   });
 
   // --------------------------------------------------------------------------
-  // 1. Tool Parity: All 16 registered tools
+  // 1. Tool Parity: All 19 registered tools
   // --------------------------------------------------------------------------
-  await t.test('1: Preserves all 16 registered MCP tools with correct schemas', () => {
-    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 16);
+  await t.test('1: Preserves all 19 registered MCP tools with correct schemas', () => {
+    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 19);
     const expectedTools = [
       'get_connected_wallet',
       'get_wallet_address',
@@ -141,6 +141,9 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
       'request_payment_approval',
       'get_hedera_payment_audit',
       'verify_hedera_payment',
+      'get_mpc_enrollment_status',
+      'verify_hedera_account_authorization',
+      'get_agent_signing_status',
     ];
 
     for (const toolName of expectedTools) {
@@ -170,7 +173,7 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
     assert.strictEqual(json.version, '1.0.0');
     assert.strictEqual(json.transport, 'streamable-http');
     assert.strictEqual(json.protocolVersion, '2024-11-05');
-    assert.strictEqual(json.toolsCount, 16);
+    assert.strictEqual(json.toolsCount, 19);
     assert.strictEqual(json.runtime, 'vercel-serverless');
   });
 
@@ -345,7 +348,7 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
       assert.strictEqual(listResult.statusCode, 200);
       const listJson = listResult.json();
       assert.ok(listJson.result);
-      assert.strictEqual(listJson.result.tools.length, 16);
+      assert.strictEqual(listJson.result.tools.length, 19);
 
       // --------------------------------------------------------------------------
       // 6. Cross-Agent Isolation Guard Across MicroVMs

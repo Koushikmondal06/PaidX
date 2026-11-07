@@ -212,32 +212,37 @@ export async function POST(req: NextRequest) {
     let sessionPubKeyHex: string | null = null;
 
     if (grantDelegatedSigning && autonomousPaymentsEnabled) {
-      if (selectedWallet?.address) {
-        if (!defaultMpcSigner.getKey(selectedWallet.address)) {
-          const mpcKey = defaultMpcEngine.generateThresholdKey(selectedWallet.address, 'secp256k1');
-          defaultMpcSigner.registerMpcKey(mpcKey);
-          sessionPubKeyHex = mpcKey.publicKeyHex;
-        } else {
-          sessionPubKeyHex = defaultMpcSigner.getKey(selectedWallet.address)!.publicKeyHex;
-        }
-      }
-
-      const agentSessionKey = PrivateKey.generateED25519();
-      delegatedKeyDer = agentSessionKey.toStringDer();
-      if (!sessionPubKeyHex) {
+      if (selectedWallet?.address && defaultMpcSigner.getKey(selectedWallet.address)) {
+        sessionPubKeyHex = defaultMpcSigner.getKey(selectedWallet.address)!.publicKeyHex;
+      } else {
+        const agentSessionKey = PrivateKey.generateED25519();
+        delegatedKeyDer = agentSessionKey.toStringDer();
         sessionPubKeyHex = agentSessionKey.publicKey.toStringRaw();
+        if (selectedWallet?.address) {
+          delegatedSigner.registerAccountKey(selectedWallet.address, delegatedKeyDer);
+        }
       }
     }
 
     const metadata = selectedWallet?.verification_metadata as Record<string, any> | null;
-    const isMetaMaskLinked =
-      metadata?.signer_type === 'metamask_evm' || metadata?.verification_method === 'metamask_evm_signature';
-    const hasDelegatedSigner = selectedWallet?.address
+    const isMpcEnrolled =
+      Boolean(metadata?.mpc_enrolled) ||
+      metadata?.signer_type === 'metamask_evm_mpc' ||
+      (selectedWallet?.address ? await defaultMpcSigner.canSign(selectedWallet.address) : false);
+
+    const hasDelegatedOrMpcSigner = selectedWallet?.address
       ? (delegatedKeyDer !== null ||
+          isMpcEnrolled ||
           (await defaultMpcSigner.canSign(selectedWallet.address)) ||
           (await delegatedSigner.canSign(selectedWallet.address)))
       : false;
-    const effectiveAutonomous = isMetaMaskLinked && !hasDelegatedSigner ? false : Boolean(autonomousPaymentsEnabled);
+
+    const isMetaMaskOnly =
+      (metadata?.signer_type === 'metamask_evm' || metadata?.verification_method === 'metamask_evm_signature') &&
+      !isMpcEnrolled &&
+      !hasDelegatedOrMpcSigner;
+
+    const effectiveAutonomous = isMetaMaskOnly ? false : Boolean(autonomousPaymentsEnabled);
 
     // 2. Generate raw Agent Bearer Token
     const rawSecret = crypto.randomBytes(24).toString('hex');

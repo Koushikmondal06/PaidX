@@ -768,4 +768,117 @@ test('PaidX MPC-Based Autonomous Hedera Signing & Account Authorization Suite', 
       }
     );
   });
+
+  // --------------------------------------------------------------------------
+  // Phase 7: Genuine Threshold Cryptography & Diagnostic Tools
+  // --------------------------------------------------------------------------
+  await t.test('Phase 7: Cryptographic partial contribution verification & replay protection', async () => {
+    const engine = new MpcTssEngine();
+    const thresholdKey = engine.generateThresholdKey(mainWalletAddress, 'secp256k1');
+
+    const msg = crypto.createHash('sha256').update('Intent and partial verification test').digest();
+
+    // 1. Valid threshold signature verifies
+    const sig = await engine.signThreshold(thresholdKey, msg, thresholdKey.agentSessionShare, {
+      payerAccountId: mainWalletAddress,
+      recipientAccountId: recipientAddress,
+      amountAtomic: '1000000',
+      validStart: '0.0.123456@1700000000.000000000',
+      nonce: 'nonce-1',
+    });
+    assert.strictEqual(sig.length, 64);
+
+    const pub = PublicKey.fromStringECDSA('0x' + thresholdKey.publicKeyHex);
+    assert.strictEqual(pub.verify(msg, sig), true);
+
+    // 2. Tampered agent session share fails closed
+    const tamperedKey: MpcThresholdKey = {
+      ...thresholdKey,
+      agentSessionShare: {
+        ...thresholdKey.agentSessionShare,
+        value: '1111111111111111111111111111111111111111111111111111111111111111',
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await engine.signThreshold(tamperedKey, msg, tamperedKey.agentSessionShare);
+      },
+      (err: any) => {
+        assert.ok(err.message.includes('Public key commitments do not sum') || err.message.includes('failed cryptographic verification'));
+        return true;
+      }
+    );
+  });
+
+  await t.test('Phase 7: Read-only MPC diagnostic tools (get_mpc_enrollment_status, verify_hedera_account_authorization, get_agent_signing_status)', async () => {
+    const { PAIDX_MCP_TOOLS } = await import('../../dashboard/lib/mcp/tools.ts');
+
+    // Register active MPC key for mainWalletAddress
+    const { thresholdKey } = await prepareMpcAccountAuthorization({
+      accountId: mainWalletAddress,
+      evmAddress: '0x9f5aea90e65bab8fbc49385f5076391a6a26ed28',
+    });
+    defaultMpcSigner.registerMpcKey(thresholdKey);
+
+    const mpcStatusTool = PAIDX_MCP_TOOLS.find((tool) => tool.name === 'get_mpc_enrollment_status');
+    const verifyAuthTool = PAIDX_MCP_TOOLS.find((tool) => tool.name === 'verify_hedera_account_authorization');
+    const signingStatusTool = PAIDX_MCP_TOOLS.find((tool) => tool.name === 'get_agent_signing_status');
+
+    assert.ok(mpcStatusTool, 'get_mpc_enrollment_status must be registered');
+    assert.ok(verifyAuthTool, 'verify_hedera_account_authorization must be registered');
+    assert.ok(signingStatusTool, 'get_agent_signing_status must be registered');
+
+    // Context for agent
+    const agentCtx = {
+      agentId: 'agt-test-mpc',
+      agentName: 'Diagnostic MPC Agent',
+      walletId: 'wallet-main-1',
+      walletAddress: mainWalletAddress,
+      userId: userA,
+    };
+
+    // 1. get_mpc_enrollment_status
+    const statusRes = await mpcStatusTool.handler(agentCtx as any, {});
+    assert.strictEqual(statusRes.accountId, mainWalletAddress);
+    assert.strictEqual(statusRes.isEnrolled, true);
+    assert.strictEqual(statusRes.threshold, 2);
+    assert.strictEqual(statusRes.totalShares, 3);
+    assert.ok(statusRes.mpcPublicKeyHex);
+    assert.strictEqual(statusRes.shares.share1_agentSession, 'active_in_memory');
+
+    // 2. verify_hedera_account_authorization
+    const verifyRes = await verifyAuthTool.handler(agentCtx as any, {});
+    assert.strictEqual(verifyRes.accountId, mainWalletAddress);
+    assert.strictEqual(verifyRes.metaMaskKeyPreserved, true);
+    assert.strictEqual(verifyRes.isAuthorizedOnChain, true);
+
+    // 3. get_agent_signing_status
+    const signingRes = await signingStatusTool.handler(agentCtx as any, {});
+    assert.strictEqual(signingRes.signingProvider, 'mpc_threshold');
+    assert.strictEqual(signingRes.sessionValid, true);
+    assert.strictEqual(signingRes.shares.share1_agentSession, 'available');
+    assert.strictEqual(signingRes.shares.share2_serverCoSigner, 'available');
+    assert.strictEqual(signingRes.shares.share3_userRecovery, 'offline_cold_storage');
+  });
+
+  await t.test('Phase 7: Strict deterministic routing fails closed without silent fallback', async () => {
+    const { unifiedSigningProvider } = await import('../../dashboard/lib/hedera/signing/registry.ts');
+
+    // Un-enrolled account
+    const unenrolledId = '0.0.9999999';
+    const tx = new TransferTransaction()
+      .addHbarTransfer(AccountId.fromString(mainWalletAddress), new Hbar(-1))
+      .addHbarTransfer(AccountId.fromString(recipientAddress), new Hbar(1));
+
+    await assert.rejects(
+      async () => {
+        await unifiedSigningProvider.signTransaction(unenrolledId, tx);
+      },
+      (err: any) => {
+        assert.ok(err.message.includes('No authorized signing provider found'));
+        return true;
+      }
+    );
+  });
 });

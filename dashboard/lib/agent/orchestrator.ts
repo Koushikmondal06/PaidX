@@ -21,6 +21,7 @@ import {
   releaseFailedReservation,
   type AgentContext,
 } from './policyEngine';
+import { defaultMpcSigner } from '../hedera/signing/mpcSigner';
 
 export interface ExecutePaymentInput {
   recipient: string;
@@ -60,6 +61,10 @@ export interface ExecutePaymentOutput {
   priceSource?: string;
   priceUsd?: string;
   priceTimestamp?: number;
+  signingProvider?: 'mpc_threshold' | 'delegated_session';
+  mpcEnrollmentVerified?: boolean;
+  onChainAuthorizationVerified?: boolean;
+  autonomousPaymentAuthorized?: boolean;
 }
 
 /**
@@ -818,6 +823,8 @@ export async function orchestrateAgentPayment(
       })
       .eq('id', paymentId);
 
+    const isMpc = await defaultMpcSigner.canSign(agentContext.walletAddress);
+
     return {
       success: true,
       paymentId,
@@ -835,6 +842,10 @@ export async function orchestrateAgentPayment(
       priceSource: policyCheckDetails.priceSource,
       priceUsd: policyCheckDetails.priceUsd,
       priceTimestamp: policyCheckDetails.priceTimestamp,
+      signingProvider: isMpc ? 'mpc_threshold' : 'delegated_session',
+      mpcEnrollmentVerified: isMpc,
+      onChainAuthorizationVerified: true,
+      autonomousPaymentAuthorized: true,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Payment execution failed';

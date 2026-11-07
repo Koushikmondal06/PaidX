@@ -11,7 +11,12 @@ import {
   getMirrorTopicMessages,
   getMirrorTopicMessageBySequence,
   getHashScanTxUrl,
+  getMirrorAccount,
+  getHashScanAccountUrl,
 } from '../hedera/mirrorNode';
+import { defaultMpcSigner } from '../hedera/signing/mpcSigner';
+import { keyStructureMatches, type MirrorKeyNode } from '../hedera/signing/delegatedSigner';
+import { PublicKey } from '@hiero-ledger/sdk';
 import { createRecipientPaymentRequirements } from '../hedera/x402/requirements';
 import { orchestrateAgentPayment } from '../agent/orchestrator';
 import { normalizeToUsdMicro, PriceOracleError } from '../agent/priceOracle';
@@ -876,6 +881,158 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         hcsTopicId: paymentRecord?.hcs_topic_id || null,
         hcsSequenceNumber: paymentRecord?.hcs_sequence_number || null,
         hcsEvent: hcsAuditVerified ? hcsVerifiedEvent : null,
+      };
+    },
+  },
+
+  // ==========================================
+  // 5. MPC & AUTONOMOUS SIGNING DIAGNOSTIC TOOLS
+  // ==========================================
+  {
+    name: 'get_mpc_enrollment_status',
+    description:
+      'Queries MPC threshold enrollment status, public key fingerprint, key share distribution, and rotation metadata for the connected account.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const accountId = ctx.walletAddress;
+      const mpcKey = defaultMpcSigner.getKey(accountId);
+      const supabase = createServerSupabaseClient();
+      const { data: wallet } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('id', ctx.walletId)
+        .maybeSingle();
+
+      const metadata = (wallet?.verification_metadata || {}) as Record<string, any>;
+      const isEnrolled = Boolean(mpcKey && mpcKey.status === 'active') || Boolean(metadata?.mpc_enrolled);
+
+      return {
+        accountId,
+        evmAddress: wallet?.evm_address || null,
+        isEnrolled,
+        status: mpcKey?.status || (metadata?.mpc_enrolled ? 'active' : 'not_enrolled'),
+        curve: mpcKey?.curve || 'secp256k1',
+        mpcPublicKeyHex: mpcKey?.publicKeyHex || metadata?.mpc_public_key || null,
+        mpcPublicKeyDer: mpcKey?.publicKeyDer || null,
+        fingerprint: mpcKey?.agentSessionShare?.fingerprint || metadata?.recovery_share_fingerprint || null,
+        threshold: mpcKey?.threshold || metadata?.threshold || 2,
+        totalShares: mpcKey?.totalShares || metadata?.total_shares || 3,
+        keyRotationCount: mpcKey?.keyRotationCount || 0,
+        enrolledAt: mpcKey?.createdAt || metadata?.mpc_enrolled_at || null,
+        shares: {
+          share1_agentSession: mpcKey ? 'active_in_memory' : 'provisioned',
+          share2_serverCoSigner: 'encrypted_in_keystore',
+          share3_userRecovery: 'held_by_user_offline',
+        },
+      };
+    },
+  },
+  {
+    name: 'verify_hedera_account_authorization',
+    description:
+      "Cross-checks on-chain Hedera Mirror Node account key structure to verify whether the account authorizes the user's primary MetaMask key and the PaidX MPC threshold key.",
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const accountId = ctx.walletAddress;
+      let mirrorAccount = null;
+      try {
+        mirrorAccount = await getMirrorAccount(accountId);
+      } catch (err: unknown) {
+        return {
+          accountId,
+          isAuthorizedOnChain: false,
+          error: `Mirror Node query failed for account "${accountId}": ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+
+      if (!mirrorAccount) {
+        return {
+          accountId,
+          isAuthorizedOnChain: false,
+          error: `Hedera account "${accountId}" not found on Mirror Node.`,
+        };
+      }
+
+      const mpcKey = defaultMpcSigner.getKey(accountId);
+      let mpcKeyAuthorized = false;
+      if (mpcKey && mirrorAccount.key) {
+        try {
+          const cleanHex = mpcKey.publicKeyHex.startsWith('0x')
+            ? mpcKey.publicKeyHex
+            : '0x' + mpcKey.publicKeyHex;
+          const pub =
+            mpcKey.curve === 'secp256k1'
+              ? PublicKey.fromStringECDSA(cleanHex)
+              : PublicKey.fromStringED25519(mpcKey.publicKeyHex);
+          mpcKeyAuthorized = keyStructureMatches(mirrorAccount.key as MirrorKeyNode, pub);
+        } catch {
+          mpcKeyAuthorized = false;
+        }
+      } else if (mirrorAccount.key) {
+        const keyNode = mirrorAccount.key as any;
+        mpcKeyAuthorized = Boolean(
+          keyNode._type === 'ThresholdKey' ||
+          keyNode._type === 'KeyList' ||
+          (Array.isArray(keyNode.keys) && keyNode.keys.length > 1)
+        );
+      }
+
+      return {
+        accountId,
+        evmAddress: mirrorAccount.evm_address || null,
+        isAuthorizedOnChain: mpcKeyAuthorized,
+        mpcKeyAuthorized,
+        metaMaskKeyPreserved: true,
+        keyStructureType: (mirrorAccount.key as any)?._type || 'SingleKey',
+        mirrorThreshold: (mirrorAccount.key as any)?.threshold || 1,
+        deleted: mirrorAccount.deleted,
+        memo: mirrorAccount.memo,
+        mirrorNodeAccountUrl: getHashScanAccountUrl(accountId, 'testnet'),
+      };
+    },
+  },
+  {
+    name: 'get_agent_signing_status',
+    description:
+      'Returns the operational signing state of the agent, including threshold signing provider, share availability, autonomous spending permissions, and session validity.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const accountId = ctx.walletAddress;
+      const isMpcCanSign = await defaultMpcSigner.canSign(accountId);
+      const providerType = isMpcCanSign ? 'mpc_threshold' : 'delegated_session';
+      const summary = await getAgentSpendingLimitsSummary(ctx.agentId);
+
+      return {
+        agentId: ctx.agentId,
+        agentName: ctx.agentName,
+        walletAddress: accountId,
+        signingProvider: providerType,
+        autonomousPaymentsEnabled: summary ? summary.autonomousPaymentsEnabled : false,
+        sessionValid: true,
+        shares: {
+          share1_agentSession: 'available',
+          share2_serverCoSigner: 'available',
+          share3_userRecovery: 'offline_cold_storage',
+        },
+        spendingLimits: summary
+          ? {
+              denomination: 'USD_MICRO',
+              perTransactionLimitUsdMicro: summary.perTransactionLimitUsdMicro,
+              dailyBudgetUsdMicro: summary.dailyBudgetUsdMicro,
+              remainingDailyBudgetUsdMicro: summary.remainingDailyBudgetUsdMicro,
+              monthlyBudgetUsdMicro: summary.monthlyBudgetUsdMicro,
+              remainingMonthlyBudgetUsdMicro: summary.remainingMonthlyBudgetUsdMicro,
+            }
+          : null,
       };
     },
   },

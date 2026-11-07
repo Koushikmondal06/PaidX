@@ -30,9 +30,14 @@ export class UnifiedWalletSigningProvider implements IWalletSigningProvider {
     transaction: TransferTransaction
   ): Promise<TransferTransaction> {
     if (await defaultMpcSigner.canSign(accountId)) {
+      // Deterministic routing: when account is enrolled in MPC, strictly use MPC signer
+      // and fail closed on error (never silently fall back to delegated signing).
       return defaultMpcSigner.signTransaction(accountId, transaction);
     }
-    return defaultDelegatedSigner.signTransaction(accountId, transaction);
+    if (await defaultDelegatedSigner.canSign(accountId)) {
+      return defaultDelegatedSigner.signTransaction(accountId, transaction);
+    }
+    throw new Error(`[Signing Registry] No authorized signing provider found for account "${accountId}".`);
   }
 }
 

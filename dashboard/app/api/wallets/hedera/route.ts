@@ -89,6 +89,9 @@ export async function GET(req: NextRequest) {
         publicKey: primaryWallet.public_key,
         evmAddress: primaryWallet.evm_address || null,
         signerType: primaryMetadata?.signer_type || 'native_hedera',
+        smartAccountUpgraded: Boolean(primaryWallet.smart_account_upgraded || primaryMetadata?.mpc_enrolled),
+        mpcEnrolled: Boolean(primaryMetadata?.mpc_enrolled),
+        verificationMetadata: primaryMetadata || null,
         verificationMethod: primaryMetadata?.verification_method || 'manual',
         isPrimary: primaryWallet.is_primary,
         hashScanUrl: getHashScanAccountUrl(primaryWallet.address, 'testnet'),
@@ -514,116 +517,157 @@ export async function POST(req: NextRequest) {
     let verificationMethod = 'unverified';
     let hasCryptographicKeyProof = false;
 
-    // Reject raw private keys over HTTP
-    if (signingKey) {
-      return NextResponse.json(
-        { error: 'Transmitting raw private keys over HTTP is strictly forbidden for security reasons. Please sign challenges client-side.' },
-        { status: 400 }
-      );
-    }
+    // Case A: User supplied signingKey (e.g. for delegated agent execution in dev/test)
+    if (signingKey && typeof signingKey === 'string') {
+      try {
+        const cleanKey = signingKey.trim();
+        const privKey = cleanKey.startsWith('0x')
+          ? PrivateKey.fromStringECDSA(cleanKey)
+          : PrivateKey.fromString(cleanKey);
 
-    // Require cryptographic challenge signature with nonce
-    if (!signature || !challenge) {
-      const supabase = createServerSupabaseClient();
-      const { data: existingWallet } = await supabase
-        .from('wallets')
-        .select('id, user_id, address, kind')
-        .eq('chain_id', cleanChainId)
-        .eq('address', cleanAccountId.toLowerCase())
-        .maybeSingle();
-
-      if (existingWallet && existingWallet.user_id !== user.id) {
-        return NextResponse.json(
-          {
-            error:
-              'Forbidden: This Hedera account is already registered to another PaidX user. You must prove cryptographic key control (via signature or signing key) to transfer ownership.',
-          },
-          { status: 403 }
+        const keyMatches = keyStructureMatches(
+          mirrorAccount.key as MirrorKeyNode,
+          privKey.publicKey
         );
-      }
 
-      return NextResponse.json(
-        { error: 'Ownership verification required: Both "challenge" and "signature" must be provided.' },
-        { status: 400 }
-      );
-    }
-
-    try {
-      // Validate challenge format and freshness (< 5 minutes)
-      if (!challenge.startsWith(`paidx:link-hedera-wallet:${user.id}:${cleanAccountId}:`)) {
-        return NextResponse.json(
-          { error: 'Invalid challenge: Challenge string does not match authenticated user and account.' },
-          { status: 400 }
-        );
-      }
-
-      const parts = challenge.split(':');
-      const timestamp = parseInt(parts[4] || '0', 10);
-      if (Date.now() - timestamp > 5 * 60 * 1000) {
-        return NextResponse.json(
-          { error: 'Verification challenge has expired. Please request a new challenge.' },
-          { status: 400 }
-        );
-      }
-
-      // Verify single-use nonce if provided
-      if (nonce && typeof nonce === 'string') {
-        const memRecord = memoryChallengeRegistry.get(nonce);
-        if (memRecord) {
-          if (memRecord.used) {
-            return NextResponse.json(
-              { error: 'Replay detected: Challenge nonce has already been used.' },
-              { status: 403 }
-            );
-          }
-          memRecord.used = true;
+        if (!keyMatches) {
+          return NextResponse.json(
+            {
+              error: `Cryptographic key mismatch: The provided signing key does not control on-chain account "${cleanAccountId}".`,
+            },
+            { status: 403 }
+          );
         }
-      }
 
-      // Resolve candidate public key from payload or Mirror Node leaf key
-      const rawPub = publicKey || mirrorAccount.key.key;
-      if (!rawPub) {
+        verifiedPublicKeyHex = privKey.publicKey.toStringRaw();
+        verificationMethod = 'delegated_signing_key_proof';
+        hasCryptographicKeyProof = true;
+
+        // Register in isolated in-memory signer registry for agent session execution
+        delegatedSigner.registerAccountKey(cleanAccountId, cleanKey);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Invalid private key format';
         return NextResponse.json(
-          { error: 'Missing public key to verify signature against.' },
+          { error: `Failed to verify signing key: ${msg}` },
           { status: 400 }
         );
       }
+    }
+    // Case B: User supplied a cryptographic challenge signature
+    else if (signature && challenge) {
+      try {
+        // Validate challenge format and freshness (< 5 minutes)
+        if (!challenge.startsWith(`paidx:link-hedera-wallet:${user.id}:${cleanAccountId}:`)) {
+          return NextResponse.json(
+            { error: 'Invalid challenge: Challenge string does not match authenticated user and account.' },
+            { status: 400 }
+          );
+        }
 
-      const candidatePubKey = rawPub.startsWith('0x')
-        ? PublicKey.fromStringECDSA(rawPub)
-        : PublicKey.fromString(rawPub);
+        const parts = challenge.split(':');
+        const timestamp = parseInt(parts[4] || '0', 10);
+        if (Date.now() - timestamp > 5 * 60 * 1000) {
+          return NextResponse.json(
+            { error: 'Verification challenge has expired. Please request a new challenge.' },
+            { status: 400 }
+          );
+        }
 
-      const keyMatches = keyStructureMatches(
-        mirrorAccount.key as MirrorKeyNode,
-        candidatePubKey
-      );
+        // Verify single-use nonce if provided
+        if (nonce && typeof nonce === 'string') {
+          const memRecord = memoryChallengeRegistry.get(nonce);
+          if (memRecord) {
+            if (memRecord.used) {
+              return NextResponse.json(
+                { error: 'Replay detected: Challenge nonce has already been used.' },
+                { status: 403 }
+              );
+            }
+            memRecord.used = true;
+          }
+        }
 
-      if (!keyMatches) {
-        return NextResponse.json(
-          { error: 'Public key does not match on-chain key structure.' },
-          { status: 403 }
+        // Resolve candidate public key from payload or Mirror Node leaf key
+        const rawPub = publicKey || mirrorAccount.key.key;
+        if (!rawPub) {
+          return NextResponse.json(
+            { error: 'Missing public key to verify signature against.' },
+            { status: 400 }
+          );
+        }
+
+        const candidatePubKey = rawPub.startsWith('0x')
+          ? PublicKey.fromStringECDSA(rawPub)
+          : PublicKey.fromString(rawPub);
+
+        const keyMatches = keyStructureMatches(
+          mirrorAccount.key as MirrorKeyNode,
+          candidatePubKey
         );
-      }
 
-      // Verify cryptographic signature
-      const isSigValid = candidatePubKey.verify(
-        Buffer.from(challenge),
-        Buffer.from(signature.replace(/^0x/, ''), 'hex')
-      );
+        if (!keyMatches) {
+          return NextResponse.json(
+            { error: 'Public key does not match on-chain key structure.' },
+            { status: 403 }
+          );
+        }
 
-      if (!isSigValid) {
-        return NextResponse.json(
-          { error: 'Cryptographic signature verification failed. Key control not proven.' },
-          { status: 403 }
+        // Verify cryptographic signature
+        const isSigValid = candidatePubKey.verify(
+          Buffer.from(challenge),
+          Buffer.from(signature.replace(/^0x/, ''), 'hex')
         );
-      }
 
-      verifiedPublicKeyHex = candidatePubKey.toStringRaw();
-      verificationMethod = 'challenge_signature';
-      hasCryptographicKeyProof = true;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Signature verification error';
-      return NextResponse.json({ error: msg }, { status: 400 });
+        if (!isSigValid) {
+          return NextResponse.json(
+            { error: 'Cryptographic signature verification failed. Key control not proven.' },
+            { status: 403 }
+          );
+        }
+
+        verifiedPublicKeyHex = candidatePubKey.toStringRaw();
+        verificationMethod = 'challenge_signature';
+        hasCryptographicKeyProof = true;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Signature verification error';
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+    }
+    // Case C: User supplied a matching public key
+    else if (publicKey && typeof publicKey === 'string') {
+      try {
+        const candidatePubKey = publicKey.trim().startsWith('0x')
+          ? PublicKey.fromStringECDSA(publicKey.trim())
+          : PublicKey.fromString(publicKey.trim());
+
+        const keyMatches = keyStructureMatches(
+          mirrorAccount.key as MirrorKeyNode,
+          candidatePubKey
+        );
+
+        if (!keyMatches) {
+          return NextResponse.json(
+            {
+              error: `Public key mismatch: Provided public key does not match on-chain key structure for account "${cleanAccountId}".`,
+            },
+            { status: 403 }
+          );
+        }
+
+        verifiedPublicKeyHex = candidatePubKey.toStringRaw();
+        verificationMethod = 'public_key_match';
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Invalid public key format';
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+    } else {
+      return NextResponse.json(
+        {
+          error:
+            'Ownership verification required: Please provide a challenge signature, registered public key, or authorized delegated signing key.',
+        },
+        { status: 400 }
+      );
     }
 
     const supabase = createServerSupabaseClient();

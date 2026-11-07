@@ -85,6 +85,9 @@ interface HederaWalletInfo {
   publicKey?: string;
   evmAddress?: string | null;
   signerType?: string;
+  smartAccountUpgraded?: boolean;
+  mpcEnrolled?: boolean;
+  verificationMetadata?: Record<string, any> | null;
   isPrimary: boolean;
   hashScanUrl: string;
   balance?: {
@@ -701,6 +704,9 @@ export default function AgentWalletPage() {
                 {hederaWallet.signerType === 'metamask_evm' && (
                   <Badge variant="info">MetaMask EVM</Badge>
                 )}
+                {(hederaWallet.mpcEnrolled || hederaWallet.smartAccountUpgraded || hederaWallet.signerType === 'metamask_evm_mpc') && (
+                  <Badge variant="active">MPC 2-of-3 Threshold Active</Badge>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xl font-bold font-mono text-[#00F5D4]">{hederaWallet.address}</span>
@@ -732,6 +738,21 @@ export default function AgentWalletPage() {
               {hederaWallet.balance && (
                 <div className="text-xs font-mono text-[#AAAAAA]">
                   On-Chain Balance: <span className="text-[#DFE0E2] font-semibold">{hederaWallet.balance.hbarBalance} HBAR</span>
+                </div>
+              )}
+              {(hederaWallet.mpcEnrolled || hederaWallet.smartAccountUpgraded || hederaWallet.signerType === 'metamask_evm_mpc') ? (
+                <div className="text-[11px] font-mono text-emerald-400/90 flex flex-wrap items-center gap-2 pt-1 border-t border-[#1A2E38]/50 mt-1">
+                  <span>✓ On-Chain: KeyList([MetaMask, MPC], threshold: 1)</span>
+                  <span className="text-[#AAAAAA]">•</span>
+                  <span>MetaMask Key Preserved</span>
+                  <span className="text-[#AAAAAA]">•</span>
+                  <span>Autonomous MPC Signing Enabled</span>
+                </div>
+              ) : (
+                <div className="text-[11px] font-mono text-emerald-400/90 flex flex-wrap items-center gap-2 pt-1 border-t border-[#1A2E38]/50 mt-1">
+                  <span>⚡ Autonomous Signing Ready: Authorized via Delegated Agent Key</span>
+                  <span className="text-[#AAAAAA]">•</span>
+                  <span>MetaMask Key Preserved</span>
                 </div>
               )}
             </div>
@@ -1448,19 +1469,33 @@ export default function AgentWalletPage() {
               required
             />
 
-            <div className="flex items-center justify-between p-3 bg-[#071013] border border-[#1A2E38] rounded-lg">
-              <div>
-                <div className="text-xs font-semibold text-[#DFE0E2]">Autonomous Payments</div>
-                <div className="text-[11px] text-[#AAAAAA]">
-                  Allow agent to pay up to daily budget without prompting
+            <div className="p-3.5 bg-[#071013] border border-[#1A2E38] rounded-lg space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-[#DFE0E2] flex items-center gap-1.5">
+                    Autonomous Payments
+                    <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                      No MetaMask Popups
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[#AAAAAA]">
+                    Allow agent to sign and settle payments autonomously within policy limits
+                  </div>
                 </div>
+                <input
+                  type="checkbox"
+                  checked={autonomousEnabled}
+                  onChange={(e) => setAutonomousEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-[#5465FF] rounded"
+                />
               </div>
-              <input
-                type="checkbox"
-                checked={autonomousEnabled}
-                onChange={(e) => setAutonomousEnabled(e.target.checked)}
-                className="w-4 h-4 accent-[#5465FF] rounded"
-              />
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1A2E38]/60 text-[11px] font-mono text-[#AAAAAA]">
+                <div>Network: <span className="text-[#DFE0E2]">hedera:testnet (296)</span></div>
+                <div>Assets: <span className="text-[#DFE0E2]">USDC, HBAR</span></div>
+                <div>Signing Mode: <span className="text-emerald-400">MPC 2-of-3 Threshold</span></div>
+                <div>Revocation: <span className="text-amber-400">Instant 1-Click</span></div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
