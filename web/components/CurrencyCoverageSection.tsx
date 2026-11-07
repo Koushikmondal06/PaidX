@@ -1,15 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, ChevronRight, Check } from 'lucide-react';
+import { Search, ChevronRight, Check, ArrowLeft, ChevronDown } from 'lucide-react';
 import {
-  BitcoinIcon,
   EthereumIcon,
   UsdcIcon,
   SolanaIcon,
   BaseChainIcon,
-  LitecoinIcon,
-  PolygonIcon,
 } from './CryptoIcons';
 
 interface Coin {
@@ -20,6 +17,7 @@ interface Coin {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   settlementTime: string;
   rateUsd: string;
+  supported: boolean;
 }
 
 export function CurrencyCoverageSection() {
@@ -32,15 +30,7 @@ export function CurrencyCoverageSection() {
       icon: UsdcIcon,
       settlementTime: '< 1.2s (Instant)',
       rateUsd: '$1.00',
-    },
-    {
-      id: 'base',
-      name: 'Base ETH',
-      symbol: 'ETH (Base)',
-      network: 'Base Layer 2',
-      icon: BaseChainIcon,
-      settlementTime: '< 1.2s',
-      rateUsd: '$3,420.00',
+      supported: true,
     },
     {
       id: 'eth',
@@ -50,33 +40,27 @@ export function CurrencyCoverageSection() {
       icon: EthereumIcon,
       settlementTime: '~12 sec',
       rateUsd: '$3,420.00',
+      supported: true,
+    },
+    {
+      id: 'base',
+      name: 'Base ETH',
+      symbol: 'ETH (Base)',
+      network: 'Base Layer 2',
+      icon: BaseChainIcon,
+      settlementTime: '< 1.2s',
+      rateUsd: '$3,420.00',
+      supported: true,
     },
     {
       id: 'sol',
       name: 'Solana',
       symbol: 'SOL',
-      network: 'Solana Mainnet',
+      network: 'Solana Mainnet (Unsupported)',
       icon: SolanaIcon,
-      settlementTime: '~1.5 sec',
+      settlementTime: 'N/A',
       rateUsd: '$198.50',
-    },
-    {
-      id: 'btc',
-      name: 'Bitcoin',
-      symbol: 'BTC',
-      network: 'Bitcoin / Lightning',
-      icon: BitcoinIcon,
-      settlementTime: '~2 sec (LN)',
-      rateUsd: '$96,400.00',
-    },
-    {
-      id: 'pol',
-      name: 'Polygon',
-      symbol: 'POL',
-      network: 'Polygon PoS',
-      icon: PolygonIcon,
-      settlementTime: '~2 sec',
-      rateUsd: '$0.58',
+      supported: false,
     },
   ];
 
@@ -90,127 +74,160 @@ export function CurrencyCoverageSection() {
   );
 
   return (
-    <section className="py-24 bg-[#F7F8FC] dark:bg-[#09152D] transition-colors duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
-        <div className="text-center max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-brand-blue bg-brand-blue/10 dark:text-brand-cyan dark:bg-brand-cyan/15">
-            <span>Settlement Rails</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#090B12] dark:text-[#F5F8FF]">
-            Zero-volatility native USDC settlement on Base
-          </h2>
-          <p className="text-base sm:text-lg text-light-text-secondary dark:text-dark-text-secondary">
-            PaidX settles transactions directly into native USDC to protect retail merchants from
-            market fluctuations. Customers can tap with PaidX smart cards or scan with any Web3 wallet.
-          </p>
-        </div>
+    <section id="coverage" className="py-20 md:py-24 bg-white dark:bg-[#050B1B] transition-colors duration-300">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Large Rounded Split-Panel Container (Matching Image 14 Reference) */}
+        <div className="rounded-[28px] sm:rounded-[32px] overflow-hidden border border-[#E2E8F0] dark:border-white/10 shadow-sm bg-white dark:bg-[#07132B]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 items-stretch">
+            
+            {/* Left Side: Subtle Light-Grey Visual Container with Floating White Asset Selector Card */}
+            <div className="bg-[#F3F5F7] dark:bg-[#0A1633] p-5 sm:p-10 lg:p-12 flex items-center justify-center transition-colors duration-300">
+              <div className="w-full max-w-[320px] xs:max-w-[360px] sm:max-w-md bg-white dark:bg-[#0C1838] rounded-[18px] p-4 sm:p-6 border border-[#E2E8F0] dark:border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-none space-y-3.5 sm:space-y-5 transition-colors duration-200">
+                
+                {/* Card Header: Back Arrow, Centered "Select Currency" */}
+                <div className="flex items-center justify-between pb-0.5">
+                  <button
+                    type="button"
+                    aria-label="Back"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/10 text-[#334155] dark:text-white transition-colors shrink-0"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                  <h3 className="font-archivo font-medium text-sm sm:text-[17px] text-[#111111] dark:text-white text-center">
+                    Select Currency
+                  </h3>
+                  <div className="w-7 sm:w-8 shrink-0" />
+                </div>
 
-        {/* 2-Column Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          {/* Left: Interactive Currency Selector Mockup */}
-          <div className="lg:col-span-6 flex justify-center">
-            <div className="w-full max-w-md bg-white dark:bg-[#101F3B] rounded-2xl p-6 sm:p-7 border border-light-border dark:border-white/10 shadow-lg space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-white/10">
-                <span className="font-bold text-base text-light-text-primary dark:text-white">
-                  Supported Assets
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-light-soft dark:bg-[#142443] text-brand-blue dark:text-brand-cyan font-mono font-medium">
-                  Base Mainnet (8453)
-                </span>
-              </div>
+                {/* Search Bar with All Networks Pill Selector */}
+                <div className="relative flex items-center min-w-0 w-full">
+                  <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#94A3B8] absolute left-3 shrink-0 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search assets..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full min-w-0 pl-8 sm:pl-9 pr-20 sm:pr-32 py-1.5 sm:py-2.5 rounded-full bg-[#F8F9FB] dark:bg-[#071022] border border-[#E2E8F0] dark:border-white/10 text-xs sm:text-sm text-[#111111] dark:text-white placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#2045E8]/20 transition-all"
+                  />
+                  <div className="absolute right-1 flex items-center gap-0.5 sm:gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-[#ECEEFF] dark:bg-[#1A2952] text-[#2045E8] dark:text-[#5B8EFF] text-[10px] sm:text-[11px] font-medium select-none pointer-events-none shrink-0">
+                    <span className="hidden xs:inline sm:inline">All Networks</span>
+                    <span className="xs:hidden sm:hidden">All</span>
+                    <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  </div>
+                </div>
 
-              {/* Search Bar */}
-              <div className="relative">
-                <Search className="w-4 h-4 text-light-text-muted dark:text-dark-text-muted absolute left-3 top-3" />
-                <input
-                  type="text"
-                  placeholder="Search assets..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-light-secondary dark:bg-[#071022] border border-light-border dark:border-white/10 text-sm text-light-text-primary dark:text-white placeholder:text-light-text-muted dark:placeholder:text-dark-text-muted focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                />
-              </div>
+                {/* 4 Supported Assets List */}
+                <div className="space-y-1 sm:space-y-2">
+                  {filteredCoins.map((coin) => {
+                    const Icon = coin.icon;
+                    const isSelected = selectedCoin.id === coin.id;
 
-              {/* Coin List */}
-              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                {filteredCoins.map((coin) => {
-                  const Icon = coin.icon;
-                  const isSelected = selectedCoin.id === coin.id;
-                  return (
-                    <button
-                      key={coin.id}
-                      onClick={() => setSelectedCoin(coin)}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
-                        isSelected
-                          ? 'bg-light-soft dark:bg-[#142443] border border-brand-blue/30 dark:border-brand-cyan/40'
-                          : 'hover:bg-light-secondary dark:hover:bg-white/5 border border-transparent'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon size={32} />
-                        <div className="text-left">
-                          <div className="text-sm font-bold text-light-text-primary dark:text-white">
-                            {coin.name}
-                          </div>
-                          <div className="text-xs font-mono text-light-text-secondary dark:text-dark-text-muted">
-                            {coin.symbol} • {coin.network}
+                    return (
+                      <div
+                        key={coin.id}
+                        onClick={() => {
+                          if (coin.supported) {
+                            setSelectedCoin(coin);
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between p-2 sm:p-3 rounded-xl sm:rounded-2xl transition-all ${
+                          !coin.supported
+                            ? 'opacity-40 cursor-not-allowed border border-transparent'
+                            : isSelected
+                            ? 'bg-[#ECEEFF] dark:bg-[#142443] border border-[#2045E8]/30 dark:border-brand-cyan/40 cursor-pointer shadow-xs'
+                            : 'hover:bg-[#F8F9FA] dark:hover:bg-white/5 border border-transparent cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                          <Icon size={28} className="shrink-0 sm:w-8 sm:h-8" />
+                          <div className="text-left truncate">
+                            <div className="font-archivo font-medium text-xs sm:text-[15px] text-[#111111] dark:text-white flex items-center gap-1.5 sm:gap-2">
+                              <span className="truncate">{coin.name}</span>
+                              {!coin.supported && (
+                                <span className="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-400 font-normal shrink-0">
+                                  Unsupported
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-archivo text-[10px] sm:text-xs text-[#64748B] dark:text-[#94A3B8] truncate">
+                              {coin.symbol} • {coin.network}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isSelected && <Check className="w-4 h-4 text-brand-blue dark:text-brand-cyan" />}
-                        <ChevronRight className="w-4 h-4 text-light-text-muted dark:text-dark-text-muted" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
 
-              {/* Active Selection Details Preview */}
-              <div className="p-3.5 rounded-xl bg-light-secondary dark:bg-[#071022] border border-light-border dark:border-white/10 flex items-center justify-between text-xs font-mono">
-                <div>
-                  <span className="text-light-text-muted dark:text-dark-text-muted">Settlement: </span>
-                  <span className="font-bold text-light-text-primary dark:text-white">
-                    {selectedCoin.symbol}
-                  </span>
+                        <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-1.5">
+                          {isSelected && coin.supported && (
+                            <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#2045E8] dark:text-brand-cyan shrink-0" strokeWidth={2.5} />
+                          )}
+                          <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#94A3B8] shrink-0" />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div>
-                  <span className="text-light-text-muted dark:text-dark-text-muted">Latency: </span>
-                  <span className="font-bold text-emerald-500">{selectedCoin.settlementTime}</span>
+
+                {/* Active Settlement Information Preview Strip */}
+                <div className="pt-2.5 sm:pt-3 border-t border-[#E2E8F0] dark:border-white/10 flex items-center justify-between text-[10px] sm:text-xs font-mono text-[#64748B] dark:text-[#94A3B8]">
+                  <div className="truncate pr-2">
+                    Settlement:{' '}
+                    <span className="font-bold text-[#111111] dark:text-white">
+                      {selectedCoin.symbol}
+                    </span>
+                  </div>
+                  <div className="shrink-0">
+                    Latency:{' '}
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {selectedCoin.settlementTime}
+                    </span>
+                  </div>
                 </div>
+
               </div>
             </div>
-          </div>
 
-          {/* Right: Copy */}
-          <div className="lg:col-span-6 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold text-brand-violet bg-brand-violet/10 dark:text-brand-violet dark:bg-brand-violet/15">
-              <span>Stablecoin Architecture</span>
-            </div>
-            <h3 className="text-3xl sm:text-4xl font-extrabold text-[#090B12] dark:text-[#F5F8FF] leading-tight">
-              Instant settlement in dollars, powered by Base Layer-2
-            </h3>
-            <p className="text-base sm:text-lg text-light-text-body dark:text-dark-text-secondary leading-relaxed">
-              When a customer taps their card at your counter, the funds are instantly verified and
-              deposited as native USDC on Base. There is zero price exposure to volatile crypto assets.
-            </p>
-            <p className="text-sm sm:text-base text-light-text-secondary dark:text-dark-text-muted leading-relaxed">
-              Customers can pay with their physical PaidX smart cards or scan with Coinbase Wallet,
-              MetaMask, Rainbow, or any self-custody wallet supporting Base and EIP-681 payment URIs.
-            </p>
+            {/* Right Side: Textual Content with Accent Label, Restrained Heading, Descriptions, and Tags */}
+            <div className="bg-white dark:bg-[#07132B] p-6 sm:p-10 lg:p-14 flex flex-col justify-center space-y-6 transition-colors duration-300">
+              
+              {/* Small Blue/Purple Accent Label */}
+              <div className="font-archivo font-normal sm:font-medium text-xl sm:text-[22px] text-[#2045E8] dark:text-[#5B8EFF] tracking-tight">
+                Settlement Rails
+              </div>
 
-            <div className="pt-2 flex flex-wrap gap-2">
-              {['USDC on Base', 'ERC-4337 Smart Accounts', 'Paymaster Gas Sponsoring', 'BaseScan Verified', 'PN532 NFC'].map(
-                (tag) => (
+              {/* Main Heading: Approximately 32-36px desktop, regular/medium weight */}
+              <h2 className="font-archivo font-medium text-2xl sm:text-3xl lg:text-[34px] text-[#111111] dark:text-[#F5F8FF] leading-[1.25] tracking-[-0.015em]">
+                Instant settlement in dollars, powered by Base Layer-2
+              </h2>
+
+              {/* Preserved Section Descriptions & Explanations */}
+              <div className="space-y-4">
+                <p className="font-archivo text-base sm:text-[17px] lg:text-[18px] text-[#334155] dark:text-[#A9B9D5] leading-[1.6]">
+                  Zero-volatility native USDC settlement on Base. PaidX settles transactions directly into native USDC to protect retail merchants from market fluctuations. When a customer taps their card at your counter, the funds are instantly verified and deposited as native USDC on Base. There is zero price exposure to volatile crypto assets.
+                </p>
+                <p className="font-archivo text-sm sm:text-base text-[#64748B] dark:text-[#94A3B8] leading-[1.6]">
+                  Customers can pay with their physical PaidX smart cards or scan with Coinbase Wallet, MetaMask, Rainbow, or any self-custody wallet supporting Base and EIP-681 payment URIs.
+                </p>
+              </div>
+
+              {/* Preserved Feature Tags */}
+              <div className="pt-2 flex flex-wrap gap-2.5">
+                {[
+                  'USDC on Base',
+                  'ERC-4337 Smart Accounts',
+                  'Paymaster Gas Sponsoring',
+                  'BaseScan Verified',
+                  'PN532 NFC',
+                ].map((tag) => (
                   <span
                     key={tag}
-                    className="px-3 py-1 rounded-lg text-xs font-mono font-semibold bg-white dark:bg-[#101F3B] border border-light-border dark:border-white/10 text-light-text-body dark:text-white"
+                    className="px-3.5 py-1.5 rounded-full text-xs font-mono font-medium bg-[#F3F5F7] dark:bg-[#0E1C38] border border-[#E2E8F0] dark:border-white/10 text-[#334155] dark:text-[#CBD5E1]"
                   >
                     {tag}
                   </span>
-                )
-              )}
+                ))}
+              </div>
+
             </div>
+
           </div>
         </div>
       </div>

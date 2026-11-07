@@ -15,9 +15,9 @@ import {
 
 test('MCP Production Integration & Transport Verification Suite', async (t) => {
   // Test 1: TypeScript Build & Registry Parity
-  await t.test('1 & 2: Registry Parity: exactly 16 tools in both dashboard and mcp-server', () => {
-    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 16);
-    assert.strictEqual(PAIDX_MCP_TOOLS.length, 16);
+  await t.test('1 & 2: Registry Parity: exactly 19 tools in both dashboard and mcp-server', () => {
+    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 19);
+    assert.strictEqual(PAIDX_MCP_TOOLS.length, 19);
 
     const mcpNames = MCP_TOOL_DEFINITIONS.map((t) => t.name).sort();
     const dashboardNames = PAIDX_MCP_TOOLS.map((t) => t.name).sort();
@@ -237,9 +237,9 @@ test('MCP Production Integration & Transport Verification Suite', async (t) => {
       });
       await clientA.connect(transportA);
 
-      // Verify listTools returns 16 tools
+      // Verify listTools returns 19 tools
       const toolList = await clientA.listTools();
-      assert.strictEqual(toolList.tools.length, 16);
+      assert.strictEqual(toolList.tools.length, 19);
 
       // Verify get_wallet_address
       const addrRes = await clientA.callTool({ name: 'get_wallet_address', arguments: {} });

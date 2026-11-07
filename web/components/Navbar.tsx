@@ -23,7 +23,7 @@ export function Navbar() {
       const targetElement = document.querySelector(href);
       if (targetElement) {
         setMobileMenuOpen(false);
-        const navHeight = 80;
+        const navHeight = 74;
         const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - navHeight;
         window.scrollTo({
           top: targetPosition,
@@ -41,7 +41,7 @@ export function Navbar() {
           : 'bg-white/60 dark:bg-[#050B1B]/60 backdrop-blur-sm border-b border-transparent'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[74px] flex items-center justify-between">
         {/* Left: PaidX logo / wordmark */}
         <a
           href="https://paidx.cc"
@@ -49,9 +49,9 @@ export function Navbar() {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/logo.svg"
+            src="/logo-02.png"
             alt="PaidX Logo"
-            className="w-8 h-8 rounded-none shadow-sm transition-transform group-hover:scale-105"
+            className="w-8 h-8 rounded-[8px] shadow-sm transition-transform group-hover:scale-105 object-cover"
           />
           <span className="font-extrabold text-2xl tracking-tight text-[#090B12] dark:text-[#F5F8FF]">
             Paid<span className="text-[#090B12] dark:text-white">X</span>
@@ -113,7 +113,7 @@ export function Navbar() {
             href="https://console.paidx.cc"
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden sm:inline-flex items-center justify-center px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-brand-blue hover:bg-brand-blue-hover dark:bg-brand-blue dark:hover:bg-blue-600 transition-all shadow-sm hover:shadow-md hover:shadow-brand-blue/20 active:scale-[0.98]"
+            className="hidden sm:inline-flex items-center justify-center px-5 py-2.5 rounded-[8px] text-sm font-semibold text-white bg-brand-blue hover:bg-brand-blue-hover dark:bg-brand-blue dark:hover:bg-blue-600 transition-all shadow-sm hover:shadow-md hover:shadow-brand-blue/20 active:scale-[0.98]"
           >
             Get Started
           </a>
@@ -167,7 +167,7 @@ export function Navbar() {
               href="https://console.paidx.cc"
               target="_blank"
               rel="noopener noreferrer"
-              className="block w-full text-center py-3 rounded-xl text-base font-semibold text-white bg-brand-blue hover:bg-brand-blue-hover shadow-sm"
+              className="block w-full text-center py-3 rounded-[8px] text-base font-semibold text-white bg-brand-blue hover:bg-brand-blue-hover shadow-sm"
             >
               Get Started
             </a>

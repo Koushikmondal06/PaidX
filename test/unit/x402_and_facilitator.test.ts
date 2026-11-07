@@ -10,6 +10,7 @@ import {
 } from '../../dashboard/lib/hedera/x402/facilitator.ts';
 import { buildTransferTransaction } from '../../dashboard/lib/hedera/hts.ts';
 import { setTestMirrorMock, pollTransactionConsensus } from '../../dashboard/lib/hedera/mirrorNode.ts';
+import { closeHederaClient } from '../../dashboard/lib/hedera/client.ts';
 import type { X402PaymentRequirements, X402PaymentPayload } from '../../dashboard/lib/hedera/types.ts';
 
 test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settlement & Mirror Node', async (t) => {
@@ -40,6 +41,10 @@ test('Phase 3 / Test Cases 11, 12, 13, 19: x402 Protocol, Verification, Settleme
   t.afterEach(() => {
     setTestFacilitatorMock(null);
     setTestMirrorMock(null);
+  });
+
+  t.after(() => {
+    closeHederaClient();
   });
 
   await t.test('Test Case 11: verifies valid payload matching exact requirements', () => {

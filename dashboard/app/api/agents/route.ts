@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { PrivateKey } from '@hiero-ledger/sdk';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAuthenticatedUser } from '@/lib/server/auth';
 import { hashAgentToken } from '@/lib/agent/policyEngine';
 import { delegatedSigner } from '@/lib/hedera/signing/delegatedSigner';
+import { defaultMpcSigner, defaultMpcEngine } from '@/lib/hedera/signing/mpcSigner';
+import { getHederaClient } from '@/lib/hedera/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,6 +82,7 @@ export async function POST(req: NextRequest) {
       dailyBudget = '20000000',   // 20 USDC
       monthlyBudget = '100000000', // 100 USDC
       autonomousPaymentsEnabled = true,
+      grantDelegatedSigning = false,
       allowedNetworks = ['hedera:testnet'],
       allowedAssets = ['USDC', 'HBAR'],
     } = body;
@@ -137,7 +141,57 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: findError.message }, { status: 500 });
       }
 
-      const existingHederaWallet = existingHederaWallets?.[0];
+      let existingHederaWallet = existingHederaWallets?.[0];
+
+      // If user has no existing Hedera wallet, attempt Hedera SDK native account creation
+      // if operator credentials are provided, avoiding forced EVM wallet connection
+      if (!existingHederaWallet) {
+        const operatorIdStr = process.env.HEDERA_OPERATOR_ID;
+        const operatorKeyStr = process.env.HEDERA_OPERATOR_KEY;
+
+        if (operatorIdStr && operatorKeyStr) {
+          try {
+            const { AccountCreateTransaction, Hbar } = await import('@hiero-ledger/sdk');
+            const client = getHederaClient();
+            const nativeKey = PrivateKey.generateED25519();
+            const tx = await new AccountCreateTransaction()
+              .setKey(nativeKey.publicKey)
+              .setInitialBalance(new Hbar(2))
+              .execute(client);
+
+            const receipt = await tx.getReceipt(client);
+            if (receipt.accountId) {
+              const createdAccId = receipt.accountId.toString();
+              const { data: newWallet } = await supabase
+                .from('wallets')
+                .insert({
+                  user_id: user.id,
+                  address: createdAccId,
+                  chain_id: 296,
+                  kind: 'hedera',
+                  network: 'hedera:testnet',
+                  is_primary: true,
+                  smart_account_upgraded: false,
+                  public_key: nativeKey.publicKey.toStringRaw(),
+                  verified: true,
+                  verification_metadata: {
+                    signer_type: 'native_hedera_sdk',
+                    created_via: 'autonomous_account_creation',
+                  },
+                })
+                .select()
+                .single();
+
+              if (newWallet) {
+                existingHederaWallet = newWallet;
+                delegatedSigner.registerAccountKey(createdAccId, nativeKey.toStringDer());
+              }
+            }
+          } catch (createErr) {
+            console.warn('[Account Creation] Autonomous Hedera account creation failed:', createErr);
+          }
+        }
+      }
 
       if (!existingHederaWallet) {
         return NextResponse.json(
@@ -153,16 +207,42 @@ export async function POST(req: NextRequest) {
       selectedWallet = existingHederaWallet;
     }
 
-    // Requirement 13: Keep autonomous payments disabled until delegated signing,
-    // spending policies, approval handling, and x402 settlement have passed integration tests.
-    // A MetaMask-linked wallet without an in-memory/delegated signer cannot autonomously sign native SDK transactions.
+    // Provision separate agent-controlled session key when user grants delegated signing
+    let delegatedKeyDer: string | null = null;
+    let sessionPubKeyHex: string | null = null;
+
+    if (grantDelegatedSigning && autonomousPaymentsEnabled) {
+      if (selectedWallet?.address && defaultMpcSigner.getKey(selectedWallet.address)) {
+        sessionPubKeyHex = defaultMpcSigner.getKey(selectedWallet.address)!.publicKeyHex;
+      } else {
+        const agentSessionKey = PrivateKey.generateED25519();
+        delegatedKeyDer = agentSessionKey.toStringDer();
+        sessionPubKeyHex = agentSessionKey.publicKey.toStringRaw();
+        if (selectedWallet?.address) {
+          delegatedSigner.registerAccountKey(selectedWallet.address, delegatedKeyDer);
+        }
+      }
+    }
+
     const metadata = selectedWallet?.verification_metadata as Record<string, any> | null;
-    const isMetaMaskLinked =
-      metadata?.signer_type === 'metamask_evm' || metadata?.verification_method === 'metamask_evm_signature';
-    const hasDelegatedSigner = selectedWallet?.address
-      ? await delegatedSigner.canSign(selectedWallet.address)
+    const isMpcEnrolled =
+      Boolean(metadata?.mpc_enrolled) ||
+      metadata?.signer_type === 'metamask_evm_mpc' ||
+      (selectedWallet?.address ? await defaultMpcSigner.canSign(selectedWallet.address) : false);
+
+    const hasDelegatedOrMpcSigner = selectedWallet?.address
+      ? (delegatedKeyDer !== null ||
+          isMpcEnrolled ||
+          (await defaultMpcSigner.canSign(selectedWallet.address)) ||
+          (await delegatedSigner.canSign(selectedWallet.address)))
       : false;
-    const effectiveAutonomous = isMetaMaskLinked && !hasDelegatedSigner ? false : Boolean(autonomousPaymentsEnabled);
+
+    const isMetaMaskOnly =
+      (metadata?.signer_type === 'metamask_evm' || metadata?.verification_method === 'metamask_evm_signature') &&
+      !isMpcEnrolled &&
+      !hasDelegatedOrMpcSigner;
+
+    const effectiveAutonomous = isMetaMaskOnly ? false : Boolean(autonomousPaymentsEnabled);
 
     // 2. Generate raw Agent Bearer Token
     const rawSecret = crypto.randomBytes(24).toString('hex');
@@ -191,6 +271,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Register delegated session key for this agent if granted
+    if (delegatedKeyDer && selectedWallet?.address) {
+      delegatedSigner.registerAgentSessionKey(connection.id, selectedWallet.address, delegatedKeyDer);
+    }
+
     // 4. Insert agent_policies record
     const { error: policyError } = await supabase.from('agent_policies').insert({
       agent_id: connection.id,
@@ -217,6 +302,7 @@ export async function POST(req: NextRequest) {
       token: rawToken, // Displayed once to the user
       prefix: tokenPrefix,
       autonomousPaymentsEnabled: effectiveAutonomous,
+      sessionPublicKey: sessionPubKeyHex,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Server error';
