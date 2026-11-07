@@ -34,6 +34,7 @@ import {
   AlertCircle,
   HelpCircle,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 
 export default function ConsoleWalletPage() {
@@ -225,11 +226,10 @@ export default function ConsoleWalletPage() {
       const formatted = formatUnits(usdcRawBalance, SUPPORTED_TOKENS.USDC.decimals);
       setAmount(formatted);
     } else {
-      // For ETH, reserve gas buffer
       try {
         const publicClient = getBrowserPublicClient();
         const gasPrice = await publicClient.getGasPrice();
-        const gasBuffer = gasPrice * 25000n; // ~25k gas safety margin
+        const gasBuffer = gasPrice * 25000n;
         if (ethRawBalance > gasBuffer) {
           const maxEth = ethRawBalance - gasBuffer;
           setAmount(formatUnits(maxEth, 18));
@@ -237,7 +237,6 @@ export default function ConsoleWalletPage() {
           setAmount('0');
         }
       } catch {
-        // Fallback default buffer: 0.001 ETH
         const buffer = 1000000000000000n; // 0.001 ETH
         if (ethRawBalance > buffer) {
           setAmount(formatUnits(ethRawBalance - buffer, 18));
@@ -304,7 +303,7 @@ export default function ConsoleWalletPage() {
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
           });
-        } catch (switchErr: unknown) {
+        } catch {
           throw new Error('Please switch MetaMask to Ethereum Sepolia Testnet before sending.');
         }
       }
@@ -319,14 +318,12 @@ export default function ConsoleWalletPage() {
       let hash: Hash;
 
       if (selectedCurrency === 'ETH') {
-        // Native ETH transfer
         hash = await walletClient.sendTransaction({
           account: senderAddress,
           to: recipientAddr,
           value: parsedAmount,
         });
       } else {
-        // USDC ERC-20 transfer
         const tokenAddr = targetToken.address;
         if (!tokenAddr) throw new Error('Payment token contract address is not configured.');
 
@@ -342,7 +339,6 @@ export default function ConsoleWalletPage() {
       setTxHash(hash);
       setTxStatus('confirming');
 
-      // Wait for authoritative receipt with timeout handling
       try {
         const receipt = await publicClient.waitForTransactionReceipt({
           hash,
@@ -354,14 +350,12 @@ export default function ConsoleWalletPage() {
           setTxStatus('confirmed');
           setAmount('');
           setRecipient('');
-          // Refresh balances after confirmed transaction
           await fetchBalances();
         } else {
           setTxStatus('failed');
-          setTxErrorMessage('Transaction reverted on Ethereum Sepolia.');
+          setTxErrorMessage('Transaction reverted on Base/Sepolia.');
         }
       } catch (receiptErr: unknown) {
-        // RPC timeout or pending: tx may still be processed on-chain!
         console.warn('[Tx Receipt Notice]:', receiptErr);
         setTxStatus('timeout');
       }
@@ -374,7 +368,7 @@ export default function ConsoleWalletPage() {
         setTxErrorMessage('Transaction request was rejected in MetaMask.');
       } else if (msg.toLowerCase().includes('insufficient funds')) {
         setTxErrorMessage(
-          'Insufficient Sepolia ETH for gas. Even when transferring USDC, Ethereum requires Sepolia ETH to pay network gas fees.'
+          'Insufficient gas funds. Network transactions require gas tokens.'
         );
       } else {
         setTxErrorMessage(msg);
@@ -386,32 +380,22 @@ export default function ConsoleWalletPage() {
     connectedAddress && recipient.trim().toLowerCase() === connectedAddress.toLowerCase();
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Testnet Banner */}
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start sm:items-center justify-between gap-3 text-amber-300 text-xs sm:text-sm">
-        <div className="flex items-center gap-2.5">
-          <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
-          <span>
-            <strong>TESTNET ENVIRONMENT:</strong> This console uses Ethereum Sepolia (Chain ID: {CHAIN_ID}). All coins are free test funds with no monetary value.
-          </span>
-        </div>
-      </div>
-
+    <div className="max-w-4xl mx-auto space-y-8">
       {/* Header & Connected Account Card */}
-      <Card className="p-6 border-slate-800 bg-slate-900/90 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-[#09152D] rounded-[24px] border border-[#E2E8F0] dark:border-white/10 p-6 sm:p-8 shadow-[0_4px_20px_-2px_rgba(17,24,39,0.05)] space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E2E8F0] dark:border-white/10">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                <Wallet className="w-6 h-6 text-indigo-400" />
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF] flex items-center gap-2.5">
+                <Wallet className="w-6 h-6 text-[#1749F5] dark:text-[#5B8EFF]" />
                 Console Wallet
               </h1>
-              <Badge variant="info" className="border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs">
-                Sepolia Testnet
+              <Badge variant="info">
+                TESTNET
               </Badge>
             </div>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Manage your self-custody wallet balances, claim faucets, and transfer test coins.
+            <p className="text-xs sm:text-sm font-archivo text-[#64748B] dark:text-[#94A3B8]">
+              Manage your smart account balances, claim test assets, and transfer tokens
             </p>
           </div>
 
@@ -419,19 +403,19 @@ export default function ConsoleWalletPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCopyAddress}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-slate-200 transition-colors"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#F8FAFC] dark:bg-white/5 hover:bg-[#F1F5F9] border border-[#E2E8F0] dark:border-white/10 text-xs font-mono text-[#111111] dark:text-[#F5F8FF] transition-colors"
                 title="Click to copy full address"
               >
                 <span>{truncateAddress(connectedAddress)}</span>
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                {copied ? <Check className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5 text-[#64748B]" />}
               </button>
 
               <a
                 href={getExplorerAddressUrl(connectedAddress)}
                 target="_blank"
                 rel="noreferrer"
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
-                title="View on Sepolia Etherscan"
+                className="p-2 rounded-xl bg-[#F8FAFC] dark:bg-white/5 hover:bg-[#F1F5F9] border border-[#E2E8F0] dark:border-white/10 text-[#64748B] hover:text-[#1749F5] transition-colors"
+                title="View on Explorer"
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
@@ -441,7 +425,6 @@ export default function ConsoleWalletPage() {
                 size="sm"
                 onClick={() => fetchBalances()}
                 disabled={isLoadingBalances}
-                className="border-slate-700 hover:bg-slate-800 text-slate-300"
                 title="Refresh balances"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBalances ? 'animate-spin' : ''}`} />
@@ -450,196 +433,205 @@ export default function ConsoleWalletPage() {
           ) : (
             <Button
               onClick={handleConnectMetaMask}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm"
+              variant="primary"
+              size="md"
             >
               Connect MetaMask
             </Button>
           )}
         </div>
-      </Card>
 
-      {/* Balances Card */}
-      <Card className="p-6 border-slate-800 bg-slate-900/90 shadow-xl space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <h2 className="text-base font-semibold text-white">Your Balances</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleAddUsdcToMetaMask}
-            className="text-xs border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/10 flex items-center gap-1.5"
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            {watchAssetStatus === 'success'
-              ? 'USDC Added!'
-              : watchAssetStatus === 'rejected'
+        {/* Balances Grid */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF]">
+              Your Balances
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAddUsdcToMetaMask}
+              className="text-xs"
+            >
+              <PlusCircle className="w-3.5 h-3.5 mr-1 text-[#1749F5]" />
+              {watchAssetStatus === 'success'
+                ? 'USDC Added!'
+                : watchAssetStatus === 'rejected'
                 ? 'Request Cancelled'
                 : 'Add USDC to MetaMask'}
-          </Button>
+            </Button>
+          </div>
+
+          {balanceError && (
+            <div className="p-3.5 rounded-xl bg-[#FEF2F2] border border-red-200 text-[#EF4444] text-xs flex items-center justify-between gap-3">
+              <span>{balanceError}</span>
+              <Button size="sm" variant="outline" onClick={() => fetchBalances()} className="text-xs">
+                Retry
+              </Button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* USDC Balance Card in Lavender */}
+            <div className="p-5 rounded-2xl bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 flex flex-col justify-between space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-archivo font-semibold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider">
+                  Settlement Currency
+                </span>
+                <Badge variant="active">USDC</Badge>
+              </div>
+              <div>
+                <div className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF]">
+                  {isLoadingBalances ? (
+                    <div className="h-8 w-28 bg-white/60 dark:bg-white/10 animate-pulse rounded-lg" />
+                  ) : (
+                    `$${formatUnits(usdcRawBalance, SUPPORTED_TOKENS.USDC.decimals)} USDC`
+                  )}
+                </div>
+                <p className="text-xs text-[#64748B] dark:text-[#94A3B8] mt-1">Circle Native Sepolia USDC</p>
+              </div>
+              {usdcRawBalance === 0n && !isLoadingBalances && (
+                <div className="pt-2 border-t border-[#DFE3F8] dark:border-white/10">
+                  <a
+                    href={FAUCET_CONFIG.USDC.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-[#1749F5] dark:text-[#5B8EFF] font-medium inline-flex items-center gap-1 hover:underline"
+                  >
+                    Claim 10 USDC from Faucet <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* ETH Balance Card */}
+            <div className="p-5 rounded-2xl bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 flex flex-col justify-between space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-archivo font-semibold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider">
+                  Gas Currency
+                </span>
+                <Badge variant="info">ETH</Badge>
+              </div>
+              <div>
+                <div className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF]">
+                  {isLoadingBalances ? (
+                    <div className="h-8 w-28 bg-[#E2E8F0] dark:bg-white/10 animate-pulse rounded-lg" />
+                  ) : (
+                    `${Number(formatUnits(ethRawBalance, 18)).toFixed(5)} ETH`
+                  )}
+                </div>
+                <p className="text-xs text-[#64748B] dark:text-[#94A3B8] mt-1">Required for network transaction fees</p>
+              </div>
+              {ethRawBalance === 0n && !isLoadingBalances && (
+                <div className="pt-2 border-t border-[#E2E8F0] dark:border-white/10">
+                  <a
+                    href={FAUCET_CONFIG.ETH.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-[#1749F5] dark:text-[#5B8EFF] font-medium inline-flex items-center gap-1 hover:underline"
+                  >
+                    Claim Free Testnet ETH <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {balanceError && (
-          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-3">
-            <span>{balanceError}</span>
-            <Button size="sm" variant="outline" onClick={() => fetchBalances()} className="text-xs h-7 border-rose-500/40 text-rose-300">
-              Retry
+        {/* Session Relayer Gas Card */}
+        {relayerAddress && (
+          <div className="p-5 rounded-2xl bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-semibold font-archivo text-[#111111] dark:text-[#F5F8FF]">
+                  POS Tap Settlement Relayer
+                </span>
+                <Badge variant={relayerBalance > 0n ? 'active' : 'warning'}>
+                  {relayerBalance > 0n ? 'Gas Ready' : 'Low Gas'}
+                </Badge>
+              </div>
+              <p className="text-xs font-mono text-[#64748B] dark:text-[#94A3B8]">
+                Address: <span className="text-[#111111] dark:text-white font-medium">{truncateAddress(relayerAddress)}</span> • Balance:{' '}
+                <strong className="text-[#111111] dark:text-white">{Number(formatUnits(relayerBalance, 18)).toFixed(5)} ETH</strong>
+              </p>
+              <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                PaidX relayer that executes on-chain card tap redemptions.
+              </p>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleFundRelayer}
+              disabled={isFundingRelayer || !connectedAddress}
+              className="text-xs whitespace-nowrap self-start sm:self-auto"
+            >
+              {isFundingRelayer ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  Funding...
+                </>
+              ) : (
+                <>Fund Relayer (0.005 ETH)</>
+              )}
             </Button>
           </div>
         )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* USDC Balance */}
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-400">Payment Currency</span>
-              <Badge variant="active" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs">
-                ERC-20
-              </Badge>
-            </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-white">
-                {isLoadingBalances ? (
-                  <div className="h-8 w-24 bg-slate-800 animate-pulse rounded"></div>
-                ) : (
-                  `${formatUnits(usdcRawBalance, SUPPORTED_TOKENS.USDC.decimals)} USDC`
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">Circle Official Sepolia USDC</p>
-            </div>
-            {usdcRawBalance === 0n && !isLoadingBalances && (
-              <div className="pt-2 border-t border-slate-800/80">
-                <a
-                  href={FAUCET_CONFIG.USDC.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-medium inline-flex items-center gap-1"
-                >
-                  Claim 10 USDC from Circle Faucet <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* Sepolia ETH Balance */}
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col justify-between space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-400">Gas Currency</span>
-              <Badge variant="info" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
-                Native
-              </Badge>
-            </div>
-            <div>
-              <div className="text-2xl font-bold tracking-tight text-white">
-                {isLoadingBalances ? (
-                  <div className="h-8 w-24 bg-slate-800 animate-pulse rounded"></div>
-                ) : (
-                  `${Number(formatUnits(ethRawBalance, 18)).toFixed(5)} ETH`
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">Required for network transaction fees</p>
-            </div>
-            {ethRawBalance === 0n && !isLoadingBalances && (
-              <div className="pt-2 border-t border-slate-800/80">
-                <a
-                  href={FAUCET_CONFIG.ETH.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-blue-400 hover:text-blue-300 font-medium inline-flex items-center gap-1"
-                >
-                  Claim Free Sepolia ETH Faucet <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {/* Session Relayer Gas Card */}
-      {relayerAddress && (
-        <Card className="p-4 sm:p-5 border-slate-800 bg-slate-900/60 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-white">POS Tap Settlement Relayer</span>
-              <Badge variant={relayerBalance > 0n ? 'active' : 'warning'} className="text-[10px]">
-                {relayerBalance > 0n ? 'Gas Ready' : 'Low Gas'}
-              </Badge>
-            </div>
-            <p className="text-[11px] font-mono text-slate-400">
-              Address: <span className="text-slate-300">{truncateAddress(relayerAddress)}</span> • Balance:{' '}
-              <strong className="text-white">{Number(formatUnits(relayerBalance, 18)).toFixed(5)} ETH</strong>
-            </p>
-            <p className="text-[11px] text-slate-500">
-              PaidX server account that submits on-chain card tap redemptions.
-            </p>
-          </div>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleFundRelayer}
-            disabled={isFundingRelayer || !connectedAddress}
-            className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 font-mono text-xs whitespace-nowrap self-start sm:self-auto"
-          >
-            {isFundingRelayer ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                Funding Relayer...
-              </>
-            ) : (
-              <>Fund Relayer (0.005 ETH)</>
-            )}
-          </Button>
-        </Card>
-      )}
+      </div>
 
       {/* Send Form Card */}
-      <Card className="p-6 border-slate-800 bg-slate-900/90 shadow-xl space-y-6">
-        <div className="border-b border-slate-800 pb-4">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <Send className="w-4 h-4 text-indigo-400" />
-            Send Testnet Coins
+      <div className="bg-white dark:bg-[#09152D] rounded-[24px] border border-[#E2E8F0] dark:border-white/10 p-6 sm:p-8 shadow-[0_4px_20px_-2px_rgba(17,24,39,0.05)] space-y-6">
+        <div className="border-b border-[#E2E8F0] dark:border-white/10 pb-4">
+          <h2 className="text-base sm:text-lg font-semibold font-archivo text-[#111111] dark:text-[#F5F8FF] flex items-center gap-2">
+            <Send className="w-4 h-4 text-[#1749F5] dark:text-[#5B8EFF]" />
+            Send Tokens
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Transfer Sepolia ETH or USDC directly from your connected MetaMask wallet.
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] mt-0.5">
+            Transfer ETH or USDC directly from your connected smart account
           </p>
         </div>
 
         {/* Currency Selector Segmented Control */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-slate-300">Select Currency</label>
-          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">
+          <label className="block text-xs sm:text-[13px] font-archivo font-medium text-[#111111] dark:text-[#F5F8FF]">
+            Select Currency
+          </label>
+          <div className="grid grid-cols-2 gap-2 p-1.5 bg-[#F8FAFC] dark:bg-white/5 rounded-2xl border border-[#E2E8F0] dark:border-white/10">
             <button
               type="button"
               onClick={() => setSelectedCurrency('USDC')}
-              className={`py-2 px-4 rounded-lg text-xs font-medium transition-all ${selectedCurrency === 'USDC'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-                }`}
+              className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-archivo font-medium transition-all ${
+                selectedCurrency === 'USDC'
+                  ? 'bg-white dark:bg-[#09152D] text-[#1749F5] dark:text-[#5B8EFF] shadow-sm font-semibold'
+                  : 'text-[#64748B] hover:text-[#111111] dark:hover:text-white'
+              }`}
             >
               USDC (Circle Sepolia)
             </button>
             <button
               type="button"
               onClick={() => setSelectedCurrency('ETH')}
-              className={`py-2 px-4 rounded-lg text-xs font-medium transition-all ${selectedCurrency === 'ETH'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-                }`}
+              className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-archivo font-medium transition-all ${
+                selectedCurrency === 'ETH'
+                  ? 'bg-white dark:bg-[#09152D] text-[#1749F5] dark:text-[#5B8EFF] shadow-sm font-semibold'
+                  : 'text-[#64748B] hover:text-[#111111] dark:hover:text-white'
+              }`}
             >
               ETH (Sepolia Native)
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleReview} className="space-y-4">
+        <form onSubmit={handleReview} className="space-y-5">
           {/* Recipient Address */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-slate-300">
+              <label className="block text-xs sm:text-[13px] font-archivo font-medium text-[#111111] dark:text-[#F5F8FF]">
                 Recipient Address
               </label>
               {isSelfSend && (
-                <span className="text-xs text-amber-400 font-medium">
-                  Notice: This matches your own connected address
+                <span className="text-xs text-amber-500 font-medium">
+                  Notice: Matches connected account
                 </span>
               )}
             </div>
@@ -649,17 +641,17 @@ export default function ConsoleWalletPage() {
               placeholder="0x..."
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
-              className="bg-slate-950 border-slate-800 font-mono text-xs text-white"
+              className="font-mono text-xs sm:text-sm"
             />
           </div>
 
           {/* Amount with MAX button */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-slate-300">
+              <label className="block text-xs sm:text-[13px] font-archivo font-medium text-[#111111] dark:text-[#F5F8FF]">
                 Amount ({selectedCurrency})
               </label>
-              <div className="text-xs text-slate-400 flex items-center gap-2">
+              <div className="text-xs text-[#64748B] dark:text-[#94A3B8] flex items-center gap-2">
                 <span>
                   Available:{' '}
                   {selectedCurrency === 'USDC'
@@ -669,7 +661,7 @@ export default function ConsoleWalletPage() {
                 <button
                   type="button"
                   onClick={handleSetMax}
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold underline"
+                  className="text-[#1749F5] dark:text-[#5B8EFF] font-semibold hover:underline"
                 >
                   Max
                 </button>
@@ -681,12 +673,11 @@ export default function ConsoleWalletPage() {
               placeholder="0.00"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="bg-slate-950 border-slate-800 text-white"
             />
           </div>
 
           {txErrorMessage && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+            <div className="p-3.5 rounded-xl bg-[#FEF2F2] border border-red-200 text-[#EF4444] text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{txErrorMessage}</span>
             </div>
@@ -694,16 +685,16 @@ export default function ConsoleWalletPage() {
 
           {/* Transaction Execution Status Feedback */}
           {txStatus !== 'idle' && (
-            <div className="p-4 rounded-xl border bg-slate-950/70 border-slate-800 space-y-2">
+            <div className="p-4 rounded-xl border bg-[#F8FAFC] dark:bg-white/5 border-[#E2E8F0] dark:border-white/10 space-y-2">
               {txStatus === 'prompting_wallet' && (
-                <div className="flex items-center gap-2 text-indigo-400 text-xs">
+                <div className="flex items-center gap-2 text-[#1749F5] text-xs">
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>Waiting for confirmation in MetaMask...</span>
                 </div>
               )}
               {txStatus === 'confirming' && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-blue-400 text-xs">
+                  <div className="flex items-center gap-2 text-[#1749F5] text-xs font-medium">
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     <span>Submitted to network. Waiting for block confirmation...</span>
                   </div>
@@ -712,42 +703,42 @@ export default function ConsoleWalletPage() {
                       href={getExplorerTxUrl(txHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-indigo-400 hover:underline flex items-center gap-1"
+                      className="text-xs text-[#1749F5] hover:underline flex items-center gap-1 font-mono"
                     >
-                      View on Sepolia Etherscan: {truncateAddress(txHash)} <ExternalLink className="w-3 h-3" />
+                      Receipt: {truncateAddress(txHash)} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>
               )}
               {txStatus === 'confirmed' && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-medium">
+                  <div className="flex items-center gap-2 text-[#10B981] text-xs font-semibold">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Transaction confirmed on Ethereum Sepolia!</span>
+                    <span>Transaction confirmed on Base L2!</span>
                   </div>
                   {txHash && (
                     <a
                       href={getExplorerTxUrl(txHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-indigo-400 hover:underline flex items-center gap-1"
+                      className="text-xs text-[#1749F5] hover:underline flex items-center gap-1 font-mono"
                     >
-                      View Receipt on Sepolia Etherscan <ExternalLink className="w-3 h-3" />
+                      View Receipt on Explorer <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>
               )}
               {txStatus === 'timeout' && (
-                <div className="space-y-1 text-xs text-amber-300">
-                  <p>Confirmation polling reached timeout. Your transaction was broadcast and may still confirm shortly.</p>
+                <div className="space-y-1 text-xs text-amber-600 dark:text-amber-300">
+                  <p>Confirmation timeout. Transaction was broadcast and may confirm shortly.</p>
                   {txHash && (
                     <a
                       href={getExplorerTxUrl(txHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-indigo-400 hover:underline flex items-center gap-1 mt-1"
+                      className="text-[#1749F5] hover:underline flex items-center gap-1 mt-1 font-mono"
                     >
-                      Check Sepolia Etherscan for status <ExternalLink className="w-3 h-3" />
+                      Check Explorer for status <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>
@@ -758,12 +749,14 @@ export default function ConsoleWalletPage() {
           <Button
             type="submit"
             disabled={!connectedAddress || txStatus === 'prompting_wallet' || txStatus === 'confirming'}
-            className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
+            variant="primary"
+            size="lg"
+            className="w-full"
           >
             Review Transfer
           </Button>
         </form>
-      </Card>
+      </div>
 
       {/* Review Modal */}
       {showReviewModal && (
@@ -772,46 +765,44 @@ export default function ConsoleWalletPage() {
           onClose={() => setShowReviewModal(false)}
           title="Review Transfer Details"
         >
-          <div className="space-y-4 pt-2">
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3 text-xs">
+          <div className="space-y-5 pt-2 font-archivo">
+            <div className="bg-[#F8FAFC] dark:bg-white/5 p-5 rounded-2xl border border-[#E2E8F0] dark:border-white/10 space-y-3 text-xs sm:text-[13px]">
               <div className="flex justify-between">
-                <span className="text-slate-400">Network:</span>
-                <span className="text-white font-medium">Ethereum Sepolia (11155111)</span>
+                <span className="text-[#64748B] dark:text-[#94A3B8]">Network:</span>
+                <span className="text-[#111111] dark:text-[#F5F8FF] font-medium">Base L2 / Sepolia</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Asset:</span>
-                <span className="text-white font-medium">
+                <span className="text-[#64748B] dark:text-[#94A3B8]">Asset:</span>
+                <span className="text-[#111111] dark:text-[#F5F8FF] font-medium">
                   {selectedCurrency} ({SUPPORTED_TOKENS[selectedCurrency].name})
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Amount:</span>
-                <span className="text-emerald-400 font-bold text-sm">
+                <span className="text-[#64748B] dark:text-[#94A3B8]">Amount:</span>
+                <span className="text-[#10B981] font-semibold text-sm">
                   {amount} {selectedCurrency}
                 </span>
               </div>
-              <div className="flex flex-col gap-1 border-t border-slate-800 pt-2">
-                <span className="text-slate-400">Recipient:</span>
-                <span className="text-white font-mono break-all">{recipient}</span>
+              <div className="flex flex-col gap-1 border-t border-[#E2E8F0] dark:border-white/10 pt-2.5">
+                <span className="text-[#64748B] dark:text-[#94A3B8]">Recipient:</span>
+                <span className="text-[#111111] dark:text-[#F5F8FF] font-mono break-all font-medium">{recipient}</span>
               </div>
-              {selectedCurrency === 'USDC' && (
-                <div className="border-t border-slate-800 pt-2 text-slate-400 text-xs">
-                  ℹ️ MetaMask will request Sepolia ETH for network gas to submit this ERC-20 transfer.
-                </div>
-              )}
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10">
               <Button
                 variant="outline"
+                size="md"
                 onClick={() => setShowReviewModal(false)}
-                className="flex-1 border-slate-700 text-slate-300"
+                className="flex-1"
               >
                 Cancel
               </Button>
               <Button
+                variant="primary"
+                size="md"
                 onClick={handleConfirmSend}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white"
+                className="flex-1"
               >
                 Confirm in MetaMask
               </Button>
@@ -822,4 +813,3 @@ export default function ConsoleWalletPage() {
     </div>
   );
 }
-

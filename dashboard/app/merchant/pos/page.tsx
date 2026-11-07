@@ -15,6 +15,9 @@ import {
   Trash2,
   Copy,
   Terminal,
+  Wifi,
+  ExternalLink,
+  Check,
 } from 'lucide-react';
 
 interface DeviceItem {
@@ -31,19 +34,22 @@ export default function PosHardwarePage() {
     {
       id: 'dev_01',
       uuid: 'd8a2f910-3841-49fa-9876-0123456789ab',
-      label: 'Main Checkout Register 01',
+      label: 'Main Checkout Register 01 (ESP32-PN532)',
       status: 'active',
-      firmware: 'v1.2.0-esp32',
-      lastActive: '2 minutes ago',
+      firmware: 'v2.4.1-esp32',
+      lastActive: 'Just now • Wi-Fi 98%',
     },
   ]);
 
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [label, setLabel] = useState('Counter Register 02');
+  const [label, setLabel] = useState('Countertop Terminal 02');
   const [provisionedSecret, setProvisionedSecret] = useState<{
     uuid: string;
     secret: string;
   } | null>(null);
+
+  const [copiedUuid, setCopiedUuid] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
 
   const handleRegisterDevice = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,10 +61,10 @@ export default function PosHardwarePage() {
     const newDevice: DeviceItem = {
       id: `dev_${Date.now()}`,
       uuid: newUuid,
-      label: label || 'New ESP32 POS',
+      label: label ? `${label} (ESP32-PN532)` : 'Countertop Terminal 02 (ESP32-PN532)',
       status: 'active',
-      firmware: 'v1.2.0-esp32',
-      lastActive: 'Just registered',
+      firmware: 'v2.4.1-esp32',
+      lastActive: 'Just registered • Wi-Fi 100%',
     };
 
     setDevices((prev) => [...prev, newDevice]);
@@ -72,15 +78,18 @@ export default function PosHardwarePage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 sm:space-y-10">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#1A2E38]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#E2E8F0] dark:border-white/10">
         <div>
-          <h1 className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
-            Physical ESP32 POS Devices
-          </h1>
-          <p className="text-xs text-[#AAAAAA] font-mono mt-1">
-            Provision and manage dedicated hardware counter terminals running PaidX firmware
+          <div className="flex items-center gap-2.5 mb-1.5">
+            <h1 className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF]">
+              Physical ESP32 POS Devices
+            </h1>
+            <Badge variant="active" dot>HARDWARE FLEET</Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] font-archivo">
+            Provision and manage dedicated countertop hardware terminals running PaidX firmware
           </p>
         </div>
 
@@ -91,65 +100,78 @@ export default function PosHardwarePage() {
             setProvisionedSecret(null);
             setShowRegisterModal(true);
           }}
-          className="font-mono text-xs"
+          className="font-archivo text-xs gap-1.5"
         >
-          <Plus className="w-3.5 h-3.5 mr-1.5" />
-          Provision New Device
+          <Plus className="w-4 h-4" />
+          <span>Provision New Device</span>
         </Button>
       </div>
 
-      {/* Device Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {devices.map((device) => (
-          <Card key={device.id} className="p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#1A2E38]">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-mono font-bold text-[#DFE0E2]">
-                  {device.label}
-                </span>
-              </div>
-              <Badge variant={device.status === 'active' ? 'active' : 'revoked'}>
-                {device.status.toUpperCase()}
-              </Badge>
-            </div>
+      {/* Device List following Section 5.6 Hardware Terminal Device Card */}
+      <div className="space-y-5">
+        <h2 className="text-xs sm:text-[13px] font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF] uppercase tracking-wider">
+          Countertop Hardware Registers ({devices.length})
+        </h2>
 
-            <div className="space-y-2 text-xs font-mono">
-              <div className="flex justify-between text-[#AAAAAA]">
-                <span>Device UUID:</span>
-                <span className="text-[#DFE0E2]">{device.uuid.slice(0, 18)}...</span>
-              </div>
-              <div className="flex justify-between text-[#AAAAAA]">
-                <span>Firmware:</span>
-                <span className="text-[#DFE0E2]">{device.firmware}</span>
-              </div>
-              <div className="flex justify-between text-[#AAAAAA]">
-                <span>Heartbeat:</span>
-                <span className="text-emerald-400">{device.lastActive}</span>
-              </div>
-            </div>
+        <div className="space-y-4">
+          {devices.map((device) => {
+            const isActive = device.status === 'active';
+            return (
+              <div
+                key={device.id}
+                className="bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 rounded-[28px] p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-colors shadow-sm"
+              >
+                <div className="flex items-center gap-4 sm:gap-5">
+                  <div className="w-14 h-14 rounded-2xl bg-white dark:bg-[#09152D] border border-[#E2E8F0] dark:border-white/10 flex items-center justify-center text-[#1749F5] dark:text-[#5B8EFF] shadow-sm shrink-0">
+                    <Radio className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      {isActive ? (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-archivo font-semibold uppercase tracking-wider bg-[#ECFDF5] text-[#10B981] dark:bg-emerald-950/40 dark:text-emerald-300">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+                          ONLINE & READY
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-archivo font-semibold uppercase tracking-wider bg-[#FEF2F2] text-[#EF4444] dark:bg-red-950/40 dark:text-red-300">
+                          REVOKED
+                        </div>
+                      )}
+                      <span className="text-xs font-mono text-[#64748B] dark:text-[#94A3B8]">
+                        UUID: {device.uuid.slice(0, 14)}...
+                      </span>
+                    </div>
 
-            <div className="pt-2 border-t border-[#1A2E38] flex items-center justify-between text-[11px] font-mono text-[#888888]">
-              <div className="flex items-center gap-1.5">
-                <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-                <span>NFC & TFT Online</span>
+                    <h4 className="font-archivo font-semibold text-lg sm:text-xl text-[#111111] dark:text-[#F5F8FF] mt-1">
+                      {device.label}
+                    </h4>
+                    <p className="font-archivo text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8]">
+                      Firmware {device.firmware} • {device.lastActive} • Tap latency &lt; 1.2s
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+                  {isActive ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRevokeDevice(device.id)}
+                      className="text-xs text-[#EF4444] hover:text-[#DC2626] hover:bg-[#FEF2F2]"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                      <span>Revoke Terminal</span>
+                    </Button>
+                  ) : (
+                    <span className="text-xs font-archivo font-medium text-[#EF4444]">
+                      Terminal Disconnected
+                    </span>
+                  )}
+                </div>
               </div>
-              {device.status === 'active' ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRevokeDevice(device.id)}
-                  className="text-rose-400 hover:text-rose-300 font-mono text-xs"
-                >
-                  <Trash2 className="w-3 h-3 mr-1" />
-                  Revoke
-                </Button>
-              ) : (
-                <span className="text-[10px] text-rose-500 font-mono">Terminal Revoked</span>
-              )}
-            </div>
-          </Card>
-        ))}
+            );
+          })}
+        </div>
       </div>
 
       {/* Register Modal */}
@@ -159,7 +181,7 @@ export default function PosHardwarePage() {
         title={provisionedSecret ? 'Device Provisioned Successfully' : 'Provision Hardware Terminal'}
       >
         {!provisionedSecret ? (
-          <form onSubmit={handleRegisterDevice} className="space-y-4">
+          <form onSubmit={handleRegisterDevice} className="space-y-5 font-archivo">
             <Input
               label="Terminal Label / Location"
               placeholder="e.g. Counter Register 02"
@@ -168,38 +190,73 @@ export default function PosHardwarePage() {
               required
             />
 
-            <div className="p-3 rounded-lg bg-[#071013] border border-[#1A2E38] text-[11px] font-mono text-[#AAAAAA]">
-              A unique Device UUID and device secret token will be generated to burn into the ESP32
-              firmware's <code className="text-[#5465FF]">paidx_secrets.h</code>.
+            <div className="p-4 rounded-xl bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 text-xs text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
+              A unique Device UUID and cryptographic authentication token will be generated to pair this ESP32 countertop terminal with your account.
             </div>
 
-            <Button type="submit" variant="primary" size="md" className="w-full">
-              Generate Pairing Token
-            </Button>
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10">
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                onClick={() => setShowRegisterModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md">
+                Generate Pairing Token
+              </Button>
+            </div>
           </form>
         ) : (
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-800 text-xs font-mono space-y-3">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold">
+          <div className="space-y-5 font-archivo">
+            <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-emerald-200 dark:border-emerald-800/40 text-xs space-y-3">
+              <div className="flex items-center gap-2 text-[#10B981] font-semibold text-sm">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Pairing Token Created</span>
               </div>
               <div>
-                <span className="text-[10px] text-[#888888] block">PAIDX_DEVICE_UUID:</span>
-                <span className="text-emerald-300 select-all break-all">{provisionedSecret.uuid}</span>
+                <span className="text-[11px] text-[#64748B] block font-medium">PAIDX_DEVICE_UUID:</span>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <span className="text-[#111111] font-mono select-all break-all">{provisionedSecret.uuid}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(provisionedSecret.uuid);
+                      setCopiedUuid(true);
+                      setTimeout(() => setCopiedUuid(false), 2000);
+                    }}
+                    className="p-1 text-[#64748B] hover:text-[#1749F5]"
+                  >
+                    {copiedUuid ? <Check className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
               <div>
-                <span className="text-[10px] text-[#888888] block">PAIDX_DEVICE_TOKEN:</span>
-                <span className="text-emerald-300 select-all break-all">{provisionedSecret.secret}</span>
+                <span className="text-[11px] text-[#64748B] block font-medium">PAIDX_DEVICE_TOKEN:</span>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <span className="text-[#111111] font-mono select-all break-all">{provisionedSecret.secret}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(provisionedSecret.secret);
+                      setCopiedToken(true);
+                      setTimeout(() => setCopiedToken(false), 2000);
+                    }}
+                    className="p-1 text-[#64748B] hover:text-[#1749F5]"
+                  >
+                    {copiedToken ? <Check className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
             </div>
 
-            <p className="text-[11px] font-mono text-[#AAAAAA]">
-              Copy these constants into <code className="text-[#5465FF]">esp/paidx_secrets.h</code> and flash your ESP32 board.
+            <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+              Copy these constants into <code className="text-[#1749F5] dark:text-[#5B8EFF] font-mono">esp/paidx_secrets.h</code> and flash your ESP32 board.
             </p>
 
             <Button
-              variant="outline"
+              variant="primary"
               size="md"
               className="w-full"
               onClick={() => setShowRegisterModal(false)}

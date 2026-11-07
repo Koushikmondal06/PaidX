@@ -497,9 +497,61 @@ CREATE POLICY "Users can view own payments" ON public.payments FOR SELECT USING 
 DROP POLICY IF EXISTS "Service role can manage pos_devices" ON public.pos_devices;
 CREATE POLICY "Service role can manage pos_devices" ON public.pos_devices FOR ALL USING (true);
 
+-- ------------------------------------------------------------------------------
+-- 10. Waitlist Subscribers Table, RLS & Aggregate Counter
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.waitlist_subscribers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  status TEXT NOT NULL DEFAULT 'pending',
+  source TEXT NOT NULL DEFAULT 'landing_page',
+  metadata JSONB DEFAULT '{}'::jsonb,
+  CONSTRAINT waitlist_subscribers_email_check CHECK (
+    email = lower(trim(email)) AND position('@' in email) > 1 AND length(email) <= 255
+  ),
+  CONSTRAINT waitlist_subscribers_status_check CHECK (
+    status IN ('pending', 'approved', 'invited', 'rejected')
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS waitlist_subscribers_email_uidx
+  ON public.waitlist_subscribers (email);
+
+CREATE INDEX IF NOT EXISTS waitlist_subscribers_created_at_idx
+  ON public.waitlist_subscribers (created_at DESC);
+
+ALTER TABLE public.waitlist_subscribers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public waitlist registration" ON public.waitlist_subscribers;
+CREATE POLICY "Allow public waitlist registration"
+  ON public.waitlist_subscribers
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow service_role full management on waitlist" ON public.waitlist_subscribers;
+CREATE POLICY "Allow service_role full management on waitlist"
+  ON public.waitlist_subscribers
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+CREATE OR REPLACE FUNCTION public.get_waitlist_count()
+RETURNS integer
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COUNT(*)::integer FROM public.waitlist_subscribers;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_waitlist_count() TO anon, authenticated, service_role;
+
 -- Success verification notice
 DO $$
 BEGIN
-  RAISE NOTICE 'PaidX Supabase Schema successfully migrated! POS Terminal #001 & Apex Retail merchant configured.';
+  RAISE NOTICE 'PaidX Supabase Schema successfully migrated! POS Terminal #001 & Waitlist configured.';
 END $$;
 

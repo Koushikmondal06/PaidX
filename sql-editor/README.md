@@ -35,3 +35,8 @@ If you prefer to run migrations individually:
    - Supports: On-chain transaction receipts and Etherscan linking
    - Adds `confirmed_at`, `user_op_hash`, and `failure_reason` to `payments`.
 
+6. **`06_waitlist.sql`**
+   - Supports: Landing page waitlist subscriber registration and dynamic counter
+   - Creates `waitlist_subscribers` table with unique email constraint and RLS
+   - Adds `get_waitlist_count()` security-definer function for privacy-safe aggregate counting.
+

@@ -1,34 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #071013;
-  --foreground: #DFE0E2;
+@layer base {
+  :root {
+    --background: #F6F7FC;
+    --foreground: #090B12;
+    --card: #FFFFFF;
+    --card-foreground: #090B12;
+    --muted: #667085;
+    --border: #E2E8F0;
+    --brand-blue: #1749F5;
+    --brand-lavender: #ECEEFF;
+  }
+
+  .dark {
+    --background: #050B1B;
+    --foreground: #F5F8FF;
+    --card: #09152D;
+    --card-foreground: #F5F8FF;
+    --muted: #A9B9D5;
+    --border: rgba(255, 255, 255, 0.1);
+    --brand-blue: #5B8EFF;
+    --brand-lavender: #0C1838;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-family: var(--font-archivo), "Archivo", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-archivo), "Archivo", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: background-color 0.25s ease, color 0.25s ease;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6, p, span, button, input, select, textarea {
+    font-family: inherit;
+  }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  min-height: 100vh;
-}
-
-/* Custom scrollbars for cyber/dark theme */
+/* Custom scrollbars for clean light/dark appearance */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #071013;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1A2E38;
-  border-radius: 3px;
+  background: #E2E8F0;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #5465FF;
+  background: #1749F5;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #5B8EFF;
 }

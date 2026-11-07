@@ -1,23 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ArrowRight, Check, Github, Twitter, Linkedin, LifeBuoy } from 'lucide-react';
+import React from 'react';
+import { ArrowRight, Github, Twitter, Linkedin, LifeBuoy } from 'lucide-react';
 
 export function Footer() {
-  const [email, setEmail] = useState('');
-  const [subscribed, setSubscribed] = useState(false);
-
-  const handleSubscribe = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email) {
-      setSubscribed(true);
-      setTimeout(() => {
-        setSubscribed(false);
-        setEmail('');
-      }, 4000);
-    }
-  };
-
   return (
     <footer className="w-full bg-[#050B1B] text-[#F5F8FF] border-t border-white/10 pt-16 sm:pt-20 pb-12 overflow-x-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12 sm:space-y-16">
@@ -66,36 +52,6 @@ export function Footer() {
               The in-store crypto payments network for the physical economy. Tap, scan, and settle on
               Base L2 in sub-second speed with zero gas headaches.
             </p>
-
-            {/* Newsletter Subscription */}
-            <div className="pt-2">
-              <span className="text-[12px] font-semibold uppercase tracking-wider text-[#94A3B8] block mb-2">
-                Subscribe to Merchant Updates
-              </span>
-              <form onSubmit={handleSubscribe} className="flex w-full max-w-sm min-w-0">
-                <input
-                  type="email"
-                  required
-                  placeholder="Enter work email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full min-w-0 px-3.5 py-2.5 rounded-l-[8px] bg-white/5 border border-white/10 text-xs sm:text-sm text-white placeholder:text-[#94A3B8] focus:outline-none focus:border-[#5B8EFF] focus:ring-1 focus:ring-[#5B8EFF] transition-colors"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2.5 rounded-r-[8px] bg-[#2045E8] hover:bg-[#1a38be] text-xs sm:text-sm font-medium text-white transition-colors shrink-0 flex items-center gap-1.5"
-                >
-                  {subscribed ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-300" />
-                      <span>Done</span>
-                    </>
-                  ) : (
-                    <span>Subscribe</span>
-                  )}
-                </button>
-              </form>
-            </div>
           </div>
 
           {/* Column 1: For Businesses */}

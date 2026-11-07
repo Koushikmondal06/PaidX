@@ -559,31 +559,37 @@ export default function OnboardingPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#071013] text-[#DFE0E2] flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-xl space-y-6">
+    <div className="min-h-screen bg-[#F6F7FC] dark:bg-[#050B1B] text-[#334155] dark:text-[#A9B9D5] flex flex-col items-center justify-center p-4 py-12 relative overflow-hidden font-archivo">
+      {/* Background ambient tint */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#ECEEFF] dark:bg-[#1749F5]/10 rounded-full blur-[130px] pointer-events-none" />
+
+      <div className="w-full max-w-xl space-y-6 relative z-10">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="flex justify-center mb-2">
-            <PaidXLogo size={36} />
+          <div className="flex justify-center mb-3">
+            <PaidXLogo size={40} />
           </div>
-          <h1 className="text-xl font-bold font-mono text-[#DFE0E2]">
+          <h1 className="text-2xl font-semibold tracking-tight text-[#111111] dark:text-white">
             {role === 'payer' ? 'User Onboarding: Non-Custodial Retail Setup' : 'Merchant Registration'}
           </h1>
-          <p className="text-xs text-[#AAAAAA] font-mono">
+          <p className="text-sm text-[#64748B] dark:text-[#94A3B8]">
             Contactless Tap Payments on Ethereum Sepolia Testnet
           </p>
         </div>
 
         {/* Role Switcher */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-[#0E1D24] rounded-xl border border-[#1A2E38]">
+        <div className="grid grid-cols-2 gap-2 p-1.5 bg-[#F1F5F9] dark:bg-white/5 rounded-xl border border-[#E2E8F0] dark:border-white/10">
           <button
             type="button"
             onClick={() => {
               setRole('payer');
               setStep(connectedAddress ? (upgradeStatus.status === 'upgraded' ? 4 : 3) : 2);
             }}
-            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${role === 'payer' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-              }`}
+            className={`py-2.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+              role === 'payer'
+                ? 'bg-white dark:bg-[#1749F5] text-[#111111] dark:text-white shadow-sm'
+                : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#111111] dark:hover:text-white'
+            }`}
           >
             <User className="w-4 h-4" />
             <span>Customer (Payer)</span>
@@ -591,8 +597,11 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={() => setRole('merchant')}
-            className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all flex items-center justify-center gap-2 ${role === 'merchant' ? 'bg-[#5465FF] text-white shadow-md' : 'text-[#AAAAAA] hover:text-[#DFE0E2]'
-              }`}
+            className={`py-2.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+              role === 'merchant'
+                ? 'bg-white dark:bg-[#1749F5] text-[#111111] dark:text-white shadow-sm'
+                : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#111111] dark:hover:text-white'
+            }`}
           >
             <Store className="w-4 h-4" />
             <span>Retail Merchant</span>
@@ -601,23 +610,32 @@ export default function OnboardingPage() {
 
         {/* 5-Step Stepper for Payer */}
         {role === 'payer' && (
-          <div className="flex items-center justify-between px-2 text-xs font-mono">
+          <div className="flex items-center justify-between px-2 text-xs">
             {[1, 2, 3, 4, 5].map((s) => (
-              <div key={s} className="flex items-center gap-1">
+              <div key={s} className="flex items-center gap-1.5">
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${s < step
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                    : s === step
-                      ? 'bg-[#5465FF] text-white shadow-md shadow-[#5465FF]/30'
-                      : 'bg-[#0B161B] text-slate-500 border border-[#1A2E38]'
-                    }`}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                    s < step
+                      ? 'bg-[#ECFDF5] text-[#10B981] border border-[#A7F3D0]'
+                      : s === step
+                      ? 'bg-[#1749F5] text-white shadow-md shadow-[#1749F5]/25'
+                      : 'bg-white dark:bg-white/5 text-[#94A3B8] border border-[#E2E8F0] dark:border-white/10'
+                  }`}
                 >
                   {s < step ? '✓' : s}
                 </div>
-                <span className={`hidden sm:inline text-[10px] ${s === step ? 'text-white' : 'text-slate-500'}`}>
+                <span
+                  className={`hidden sm:inline text-xs font-medium ${
+                    s === step
+                      ? 'text-[#111111] dark:text-white font-semibold'
+                      : s < step
+                      ? 'text-[#10B981]'
+                      : 'text-[#94A3B8]'
+                  }`}
+                >
                   {s === 1 ? 'Auth' : s === 2 ? 'Wallet' : s === 3 ? 'Upgrade' : s === 4 ? 'Limit' : 'Card'}
                 </span>
-                {s < 5 && <div className="w-4 sm:w-6 h-[1px] bg-[#1A2E38] mx-0.5" />}
+                {s < 5 && <div className="w-4 sm:w-6 h-[1px] bg-[#E2E8F0] dark:bg-white/10 mx-1" />}
               </div>
             ))}
           </div>
@@ -625,20 +643,20 @@ export default function OnboardingPage() {
 
         {/* STEP 2: CONNECT WALLET */}
         {role === 'payer' && step === 2 && (
-          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-[#5465FF]" />
+          <Card className="p-6 sm:p-8 border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-[#09152D] rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] space-y-6">
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-semibold text-[#111111] dark:text-white flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-[#1749F5]" />
                 Step 2: Connect MetaMask on Sepolia
               </h2>
-              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+              <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 Connect your self-custody MetaMask wallet. PaidX never holds your private keys; payments settle directly from your account.
               </p>
             </div>
 
             {walletError && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-3.5 rounded-xl bg-[#FEF2F2] dark:bg-red-950/30 border border-[#FCA5A5] dark:border-red-800/60 text-[#991B1B] dark:text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#EF4444]" />
                 <span>{walletError}</span>
               </div>
             )}
@@ -646,17 +664,18 @@ export default function OnboardingPage() {
             <Button
               onClick={handleConnectWallet}
               disabled={isConnectingWallet}
-              className="w-full h-11 bg-[#5465FF] hover:bg-[#4353ea] text-white font-mono text-xs flex items-center justify-center gap-2"
+              variant="primary"
+              className="w-full text-xs font-semibold py-3 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
             >
               {isConnectingWallet ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Connecting MetaMask...
+                  <span>Connecting MetaMask...</span>
                 </>
               ) : (
                 <>
                   <Wallet className="w-4 h-4" />
-                  Connect MetaMask (Ethereum Sepolia)
+                  <span>Connect MetaMask (Ethereum Sepolia)</span>
                 </>
               )}
             </Button>
@@ -665,55 +684,55 @@ export default function OnboardingPage() {
 
         {/* STEP 3: EIP-7702 UPGRADE */}
         {role === 'payer' && step === 3 && (
-          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-400" />
+          <Card className="p-6 sm:p-8 border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-[#09152D] rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] space-y-6">
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-semibold text-[#111111] dark:text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#1749F5]" />
                 Step 3: Upgrade to MetaMask Smart Account (EIP-7702)
               </h2>
-              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+              <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 PaidX uses official MetaMask Smart Accounts to enable scoped execution permissions for physical NFC card taps.
               </p>
             </div>
 
-            <div className="p-4 bg-[#071013] rounded-xl border border-[#1A2E38] space-y-2 text-xs font-mono">
+            <div className="p-4 bg-[#ECEEFF] dark:bg-[#1749F5]/10 rounded-xl border border-[#DFE3F8] dark:border-[#1749F5]/30 space-y-2.5 text-xs text-[#334155] dark:text-[#A9B9D5]">
               <div className="flex justify-between items-center">
-                <span className="text-[#AAAAAA]">Account:</span>
+                <span className="text-[#64748B] dark:text-[#94A3B8]">Account:</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-white select-all">{truncateAddress(connectedAddress)}</span>
+                  <span className="text-[#111111] dark:text-white font-mono select-all">{truncateAddress(connectedAddress)}</span>
                   <button
                     type="button"
                     onClick={handleSwitchWallet}
-                    className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                    className="text-xs text-[#1749F5] hover:underline font-medium"
                   >
                     Change Wallet
                   </button>
                 </div>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-[#AAAAAA]">Account Status:</span>
+                <span className="text-[#64748B] dark:text-[#94A3B8]">Account Status:</span>
                 <Badge variant={upgradeStatus.status === 'upgraded' ? 'active' : 'warning'}>
                   {upgradeStatus.status === 'upgraded' ? 'MetaMask Smart Account' : upgradeStatus.isForeignDelegation ? 'Delegated (Foreign)' : 'EOA'}
                 </Badge>
               </div>
               {upgradeStatus.warning && (
-                <div className="text-[11px] text-amber-400 pt-1 border-t border-[#1A2E38]/50">
+                <div className="text-xs text-[#B45309] dark:text-amber-300 pt-1 border-t border-[#DFE3F8] dark:border-white/10">
                   {upgradeStatus.warning}
                 </div>
               )}
             </div>
 
             {upgradeError && (
-              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-col gap-2 font-mono">
+              <div className="p-3.5 rounded-xl bg-[#FFFBEB] dark:bg-amber-950/30 border border-[#FDE68A] dark:border-amber-800/60 text-[#92400E] dark:text-amber-300 text-xs flex flex-col gap-2">
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
                   <span>{upgradeError}</span>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setStep(4)}
-                  className="w-full mt-1 font-mono text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
+                  className="w-full mt-1 text-xs border-[#FDE68A] text-[#92400E] hover:bg-amber-100 dark:hover:bg-amber-900/40"
                 >
                   Continue with Standard Wallet &rarr;
                 </Button>
@@ -724,17 +743,18 @@ export default function OnboardingPage() {
               <Button
                 onClick={handleUpgradeAccount}
                 disabled={isUpgrading}
-                className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+                variant="primary"
+                className="w-full text-xs font-semibold py-3 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
               >
                 {isUpgrading ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    Waiting for Upgrade Confirmation...
+                    <span>Waiting for Upgrade Confirmation...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    Upgrade to Smart Account
+                    <span>Upgrade to Smart Account</span>
                   </>
                 )}
               </Button>
@@ -744,25 +764,25 @@ export default function OnboardingPage() {
                   type="button"
                   onClick={handleRecheckUpgrade}
                   disabled={isCheckingUpgrade}
-                  className="text-xs font-mono text-indigo-400 hover:underline inline-flex items-center gap-1"
+                  className="text-xs text-[#1749F5] hover:underline inline-flex items-center gap-1 font-medium"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isCheckingUpgrade ? 'animate-spin' : ''}`} />
-                  Check Upgrade Status
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpgrade ? 'animate-spin' : ''}`} />
+                  <span>Check Upgrade Status</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setStep(4)}
-                  className="text-xs font-mono text-emerald-400 hover:underline inline-flex items-center gap-1 font-bold"
+                  className="text-xs text-[#10B981] hover:underline inline-flex items-center gap-1 font-semibold"
                 >
-                  Skip & Continue &rarr;
+                  <span>Skip & Continue &rarr;</span>
                 </button>
               </div>
             </div>
 
             {/* Manual Fallback Explanation */}
-            <div className="p-3 bg-[#0B161B] rounded-lg border border-[#1A2E38] text-[11px] font-mono text-[#888888] space-y-1">
-              <p className="text-slate-300 font-bold">Manual Upgrade Steps:</p>
+            <div className="p-4 bg-[#F8FAFC] dark:bg-white/5 rounded-xl border border-[#E2E8F0] dark:border-white/10 text-xs text-[#64748B] dark:text-[#94A3B8] space-y-1.5">
+              <p className="text-[#111111] dark:text-white font-semibold">Manual Upgrade Steps:</p>
               <p>1. Open MetaMask &rarr; Account Selector &rarr; Settings.</p>
               <p>2. Toggle on "Enable Smart Account features".</p>
               <p>3. Click "Check Upgrade Status Again" above.</p>
@@ -772,30 +792,30 @@ export default function OnboardingPage() {
 
         {/* STEP 4: DIRECT ON-CHAIN SPENDING ALLOWANCE */}
         {role === 'payer' && step === 4 && (
-          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
-            <div className="space-y-1">
+          <Card className="p-6 sm:p-8 border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-[#09152D] rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] space-y-6">
+            <div className="space-y-1.5">
               <div className="flex justify-between items-start">
-                <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h2 className="text-lg font-semibold text-[#111111] dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-[#10B981]" />
                   Step 4: Direct On-Chain Spending Allowance
                 </h2>
                 <button
                   type="button"
                   onClick={handleSwitchWallet}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                  className="text-xs text-[#1749F5] hover:underline font-medium"
                 >
                   Change Wallet
                 </button>
               </div>
-              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+              <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 Approves a daily rolling spending allowance for the PaidX Session Relayer directly in on-chain Circle USDC. Funds remain non-custodial in your self-custody wallet until you tap at a counter terminal.
               </p>
             </div>
 
             {/* Presets + Custom Limit */}
             <div className="space-y-2">
-              <label className="block text-xs font-mono text-slate-300">Daily Spending Limit (USDC)</label>
-              <div className="grid grid-cols-4 gap-2">
+              <label className="block text-xs font-semibold text-[#111111] dark:text-white">Daily Spending Limit (USDC)</label>
+              <div className="grid grid-cols-4 gap-2.5">
                 {['10', '25', '50', '100'].map((preset) => (
                   <button
                     key={preset}
@@ -804,10 +824,11 @@ export default function OnboardingPage() {
                       setSpendingLimit(preset);
                       setIsCustomLimit(false);
                     }}
-                    className={`py-2 rounded-lg text-xs font-mono font-bold border transition-all ${!isCustomLimit && spendingLimit === preset
-                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                      : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
-                      }`}
+                    className={`py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                      !isCustomLimit && spendingLimit === preset
+                        ? 'bg-[#1749F5] text-white border-[#1749F5] shadow-sm'
+                        : 'bg-[#F8FAFC] dark:bg-white/5 text-[#334155] dark:text-[#CBD5E1] border-[#E2E8F0] dark:border-white/10 hover:border-[#1749F5]/40'
+                    }`}
                   >
                     ${preset}
                   </button>
@@ -818,7 +839,7 @@ export default function OnboardingPage() {
                 <button
                   type="button"
                   onClick={() => setIsCustomLimit(!isCustomLimit)}
-                  className="text-xs font-mono text-indigo-400 hover:underline"
+                  className="text-xs text-[#1749F5] hover:underline font-medium"
                 >
                   {isCustomLimit ? 'Choose from presets' : 'Enter custom limit'}
                 </button>
@@ -828,7 +849,7 @@ export default function OnboardingPage() {
                     placeholder="e.g. 75"
                     value={customLimit}
                     onChange={(e) => setCustomLimit(e.target.value)}
-                    className="mt-2 bg-[#071013] border-[#1A2E38] text-white"
+                    className="mt-2"
                   />
                 )}
               </div>
@@ -836,8 +857,8 @@ export default function OnboardingPage() {
 
             {/* Expiry Presets */}
             <div className="space-y-2">
-              <label className="block text-xs font-mono text-slate-300">Permission Expiry</label>
-              <div className="grid grid-cols-3 gap-2">
+              <label className="block text-xs font-semibold text-[#111111] dark:text-white">Permission Expiry</label>
+              <div className="grid grid-cols-3 gap-2.5">
                 {[
                   { label: '7 Days', val: '7' },
                   { label: '30 Days', val: '30' },
@@ -847,10 +868,11 @@ export default function OnboardingPage() {
                     key={exp.val}
                     type="button"
                     onClick={() => setExpiryDays(exp.val)}
-                    className={`py-2 rounded-lg text-xs font-mono font-medium border transition-all ${expiryDays === exp.val
-                      ? 'bg-indigo-600 text-white border-indigo-500'
-                      : 'bg-[#071013] text-slate-400 border-[#1A2E38] hover:border-slate-600'
-                      }`}
+                    className={`py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                      expiryDays === exp.val
+                        ? 'bg-[#1749F5] text-white border-[#1749F5] shadow-sm'
+                        : 'bg-[#F8FAFC] dark:bg-white/5 text-[#334155] dark:text-[#CBD5E1] border-[#E2E8F0] dark:border-white/10 hover:border-[#1749F5]/40'
+                    }`}
                   >
                     {exp.label}
                   </button>
@@ -859,23 +881,23 @@ export default function OnboardingPage() {
             </div>
 
             {/* Plain Language Summary */}
-            <div className="p-4 bg-[#071013] rounded-xl border border-indigo-500/30 text-xs font-mono text-indigo-300 space-y-1">
-              <p className="font-bold text-white flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-indigo-400" />
+            <div className="p-4 sm:p-5 bg-[#ECEEFF] dark:bg-[#1749F5]/10 rounded-xl border border-[#DFE3F8] dark:border-[#1749F5]/30 text-xs text-[#334155] dark:text-[#A9B9D5] space-y-1.5">
+              <p className="font-semibold text-[#111111] dark:text-white flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-[#1749F5]" />
                 Plain-Language Permission Summary:
               </p>
-              <p className="text-slate-300">
+              <p className="leading-relaxed">
                 PaidX can spend up to{' '}
-                <strong className="text-emerald-400">${isCustomLimit ? customLimit || '0' : spendingLimit} USDC</strong>{' '}
-                per day until <strong className="text-white">{targetExpiryDate}</strong>.
+                <strong className="text-[#10B981] font-semibold">${isCustomLimit ? customLimit || '0' : spendingLimit} USDC</strong>{' '}
+                per day until <strong className="text-[#111111] dark:text-white font-semibold">{targetExpiryDate}</strong>.
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
                 You can revoke or adjust this permission anytime from your dashboard.
               </p>
             </div>
 
             {permissionError && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+              <div className="p-3.5 rounded-xl bg-[#FEF2F2] dark:bg-red-950/30 border border-[#FCA5A5] dark:border-red-800/60 text-[#991B1B] dark:text-red-300 text-xs">
                 {permissionError}
               </div>
             )}
@@ -883,12 +905,13 @@ export default function OnboardingPage() {
             <Button
               onClick={handleGrantPermission}
               disabled={isSavingPermission}
-              className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+              variant="primary"
+              className="w-full text-xs font-semibold py-3 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
             >
               {isSavingPermission ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Sign Spending Allowance in MetaMask...
+                  <span>Sign Spending Allowance in MetaMask...</span>
                 </>
               ) : (
                 <>
@@ -902,61 +925,58 @@ export default function OnboardingPage() {
 
         {/* STEP 5: ISSUE PHYSICAL NFC CARD */}
         {role === 'payer' && step === 5 && (
-          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
-            <div className="space-y-1">
+          <Card className="p-6 sm:p-8 border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-[#09152D] rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] space-y-6">
+            <div className="space-y-1.5">
               <div className="flex justify-between items-start">
-                <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-indigo-400" />
+                <h2 className="text-lg font-semibold text-[#111111] dark:text-white flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-[#1749F5]" />
                   Step 5: Issue Physical NFC Card On-Chain
                 </h2>
                 <button
                   type="button"
                   onClick={handleSwitchWallet}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-mono"
+                  className="text-xs text-[#1749F5] hover:underline font-medium"
                 >
                   Change Wallet
                 </button>
               </div>
-              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+              <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 Enter your physical NFC card UID. Your account will execute an on-chain registration on the Sepolia CardRegistry contract.
               </p>
             </div>
 
             {registeredCardTx ? (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-2 font-mono">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <h3 className="text-sm font-bold text-white">Card Successfully Issued & Registered On-Chain!</h3>
+              <div className="p-5 bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800/60 rounded-xl text-center space-y-3">
+                <CheckCircle2 className="w-9 h-9 text-[#10B981] mx-auto" />
+                <h3 className="text-base font-semibold text-[#065F46] dark:text-emerald-300">Card Successfully Issued & Registered On-Chain!</h3>
                 <a
                   href={getExplorerTxUrl(registeredCardTx)}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs text-indigo-400 hover:underline flex items-center justify-center gap-1"
+                  className="text-xs text-[#1749F5] hover:underline inline-flex items-center justify-center gap-1 font-medium"
                 >
-                  View Receipt on Sepolia Etherscan <ExternalLink className="w-3 h-3" />
+                  <span>View Receipt on Sepolia Etherscan</span> <ExternalLink className="w-3.5 h-3.5" />
                 </a>
-                <p className="text-xs text-slate-400 pt-2">Redirecting to your dashboard...</p>
+                <p className="text-xs text-[#64748B] dark:text-[#94A3B8] pt-1">Redirecting to your dashboard...</p>
               </div>
             ) : (
               <form onSubmit={handleRegisterCard} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-mono text-slate-300 mb-1.5">
-                    Physical NFC Card UID
-                  </label>
                   <Input
+                    label="Physical NFC Card UID"
                     type="text"
                     required
                     placeholder="e.g. 04:A2:B3:C4:D5:E6:F7"
                     value={cardUid}
                     onChange={(e) => setCardUid(e.target.value)}
-                    className="bg-[#071013] border-[#1A2E38] font-mono text-xs text-white"
                   />
-                  <p className="text-[11px] text-slate-500 font-mono mt-1">
+                  <p className="text-xs text-[#64748B] dark:text-[#94A3B8] mt-1.5">
                     Raw UID is salted with CARD_UID_SALT and never stored in plain text.
                   </p>
                 </div>
 
                 {cardError && (
-                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                  <div className="p-3.5 rounded-xl bg-[#FEF2F2] dark:bg-red-950/30 border border-[#FCA5A5] dark:border-red-800/60 text-[#991B1B] dark:text-red-300 text-xs">
                     {cardError}
                   </div>
                 )}
@@ -964,17 +984,18 @@ export default function OnboardingPage() {
                 <Button
                   type="submit"
                   disabled={isRegisteringCard || !cardUid.trim()}
-                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+                  variant="primary"
+                  className="w-full text-xs font-semibold py-3 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
                 >
                   {isRegisteringCard ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Sign Transaction in MetaMask...
+                      <span>Sign Transaction in MetaMask...</span>
                     </>
                   ) : (
                     <>
                       <CreditCard className="w-4 h-4" />
-                      Sign On-Chain Registration (Sepolia ETH)
+                      <span>Sign On-Chain Registration (Sepolia ETH)</span>
                     </>
                   )}
                 </Button>
@@ -985,27 +1006,28 @@ export default function OnboardingPage() {
 
         {/* MERCHANT ONBOARDING */}
         {role === 'merchant' && (
-          <Card className="p-6 border-[#1A2E38] bg-[#0E1D24] shadow-xl space-y-5">
-            <div className="space-y-1">
-              <h2 className="text-sm font-mono font-bold text-white flex items-center gap-2">
-                <Store className="w-5 h-5 text-indigo-400" />
+          <Card className="p-6 sm:p-8 border border-[#E2E8F0] dark:border-white/10 bg-white dark:bg-[#09152D] rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.06)] space-y-6">
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-semibold text-[#111111] dark:text-white flex items-center gap-2">
+                <Store className="w-5 h-5 text-[#1749F5]" />
                 Merchant Application & Settlement Configuration
               </h2>
-              <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed">
+              <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 Register your retail store on Ethereum Sepolia. In accordance with protocol governance, merchant registrations must be approved on-chain by the protocol administrator.
               </p>
             </div>
 
             {merchantSuccess ? (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-3 font-mono">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <h3 className="text-sm font-bold text-white">Application Submitted! Status: Pending</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
+              <div className="p-5 bg-[#ECFDF5] dark:bg-emerald-950/30 border border-[#A7F3D0] dark:border-emerald-800/60 rounded-xl text-center space-y-3">
+                <CheckCircle2 className="w-9 h-9 text-[#10B981] mx-auto" />
+                <h3 className="text-base font-semibold text-[#065F46] dark:text-emerald-300">Application Submitted! Status: Pending</h3>
+                <p className="text-xs text-[#334155] dark:text-[#A9B9D5] leading-relaxed">
                   Your store payout address is registered. Once approved on-chain by the protocol admin on the Sepolia MerchantRegistry, your store will become active.
                 </p>
                 <Button
                   onClick={() => router.push('/merchant')}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs"
+                  variant="primary"
+                  className="w-full text-xs font-semibold py-3 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
                 >
                   Go to Merchant Dashboard
                 </Button>
@@ -1013,42 +1035,36 @@ export default function OnboardingPage() {
             ) : (
               <form onSubmit={handleMerchantSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-mono text-slate-300 mb-1.5">
-                    Business / Store Name
-                  </label>
                   <Input
+                    label="Business / Store Name"
                     type="text"
                     required
                     placeholder="e.g. Apex Coffee & Bakery"
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
-                    className="bg-[#071013] border-[#1A2E38] text-white text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-mono text-slate-300 mb-1.5">
-                    Store URL Identifier (Slug)
-                  </label>
                   <Input
+                    label="Store URL Identifier (Slug)"
                     type="text"
                     placeholder="e.g. apex-coffee"
                     value={merchantSlug}
                     onChange={(e) => setMerchantSlug(e.target.value)}
-                    className="bg-[#071013] border-[#1A2E38] font-mono text-xs text-white"
                   />
                 </div>
 
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
-                    <label className="block text-xs font-mono text-slate-300">
+                    <label className="block text-xs font-semibold text-[#111111] dark:text-white">
                       Settlement Payout Address
                     </label>
                     {connectedAddress && (
                       <button
                         type="button"
                         onClick={() => setPayoutAddress(connectedAddress)}
-                        className="text-xs font-mono text-indigo-400 hover:underline"
+                        className="text-xs text-[#1749F5] hover:underline font-medium"
                       >
                         Use Connected Wallet
                       </button>
@@ -1060,15 +1076,14 @@ export default function OnboardingPage() {
                     placeholder="0x..."
                     value={payoutAddress}
                     onChange={(e) => setPayoutAddress(e.target.value)}
-                    className="bg-[#071013] border-[#1A2E38] font-mono text-xs text-white"
                   />
-                  <p className="text-[11px] text-slate-500 font-mono mt-1">
+                  <p className="text-xs text-[#64748B] dark:text-[#94A3B8] mt-1.5">
                     All retail USDC customer payments will settle directly to this address.
                   </p>
                 </div>
 
                 {walletError && (
-                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                  <div className="p-3.5 rounded-xl bg-[#FEF2F2] dark:bg-red-950/30 border border-[#FCA5A5] dark:border-red-800/60 text-[#991B1B] dark:text-red-300 text-xs">
                     {walletError}
                   </div>
                 )}
@@ -1076,17 +1091,18 @@ export default function OnboardingPage() {
                 <Button
                   type="submit"
                   disabled={isSubmittingMerchant}
-                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs flex items-center justify-center gap-2"
+                  variant="primary"
+                  className="w-full text-xs font-semibold py-3 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
                 >
                   {isSubmittingMerchant ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Submitting Application...
+                      <span>Submitting Application...</span>
                     </>
                   ) : (
                     <>
                       <Store className="w-4 h-4" />
-                      Submit Merchant Application
+                      <span>Submit Merchant Application</span>
                     </>
                   )}
                 </Button>

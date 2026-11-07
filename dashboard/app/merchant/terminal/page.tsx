@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/Badge';
 import { QrCodeDisplay } from '@/components/ui/QrCodeDisplay';
 import { getRealUserSession, UserSession } from '@/lib/auth';
 import { generateEip681PaymentUri, truncateAddress, getExplorerTxUrl } from '@/lib/base';
-import { formatUsdc } from '@/lib/currency';
 import { parseUnits } from 'viem';
 import {
   Terminal,
@@ -20,6 +19,7 @@ import {
   Radio,
   ExternalLink,
   AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function VirtualTerminalPage() {
@@ -130,40 +130,58 @@ export default function VirtualTerminalPage() {
     setErrorMessage(null);
   };
 
+  const presetAmounts = ['2.50', '5.00', '12.50', '25.00'];
+
   if (!session) return null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between pb-6 border-b border-[#1A2E38]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#E2E8F0] dark:border-white/10">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
+          <div className="flex items-center gap-2.5 mb-1.5">
+            <h1 className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF]">
               Virtual POS Checkout Register
-            </span>
-            <Badge variant="active">SEPOLIA TESTNET</Badge>
+            </h1>
+            <Badge variant="active" dot>LIVE COUNTER POS</Badge>
           </div>
-          <p className="text-xs text-[#AAAAAA] font-mono">
-            Accept contactless NFC card taps or EIP-681 QR codes
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] font-archivo">
+            Accept contactless NFC smart card taps or generate dynamic EIP-681 payment QR codes
           </p>
         </div>
+
+        {receivingAddress && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 text-xs font-mono">
+            <span className="text-[#64748B] dark:text-[#94A3B8]">Receiving:</span>
+            <span className="text-[#1749F5] dark:text-[#5B8EFF] font-medium">{truncateAddress(receivingAddress)}</span>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Cashier Charge Form */}
-        <Card className="p-6 space-y-5">
-          <h3 className="text-sm font-mono font-bold text-[#DFE0E2] flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-[#5465FF]" />
-            <span>Transaction Details</span>
-          </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+        {/* Cashier Charge Form Card */}
+        <div className="bg-white dark:bg-[#09152D] rounded-[24px] border border-[#E2E8F0] dark:border-white/10 p-6 sm:p-8 shadow-[0_4px_20px_-2px_rgba(17,24,39,0.05)] space-y-6">
+          <div className="flex items-center gap-2.5 pb-2 border-b border-[#E2E8F0] dark:border-white/10">
+            <div className="w-9 h-9 rounded-xl bg-[#ECEEFF] dark:bg-white/10 text-[#1749F5] dark:text-[#5B8EFF] flex items-center justify-center">
+              <Terminal className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                Register Sale Amount
+              </h3>
+              <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                Settled natively in USDC on Base L2
+              </p>
+            </div>
+          </div>
 
-          <form onSubmit={handleCreateCharge} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-mono font-medium text-[#DFE0E2]">
-                Amount to Charge (USDC)
+          <form onSubmit={handleCreateCharge} className="space-y-5 font-archivo">
+            <div className="space-y-2">
+              <label className="block text-xs sm:text-[13px] font-medium text-[#111111] dark:text-[#F5F8FF]">
+                Charge Amount (USDC)
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-2.5 text-xs font-mono text-[#888888]">
+                <span className="absolute left-4 top-3 text-xl font-semibold text-[#64748B] dark:text-[#94A3B8]">
                   $
                 </span>
                 <input
@@ -172,53 +190,71 @@ export default function VirtualTerminalPage() {
                   min="0.01"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-[#071013] border border-[#1A2E38] focus:border-[#5465FF] focus:ring-1 focus:ring-[#5465FF] text-[#DFE0E2] text-xl font-mono font-bold rounded-lg pl-8 pr-3.5 py-2 transition-all focus:outline-none"
+                  className="w-full bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/15 focus:border-[#1749F5] focus:ring-1 focus:ring-[#1749F5] text-[#111111] dark:text-white text-2xl font-semibold rounded-xl pl-9 pr-4 py-2.5 transition-all focus:outline-none"
                   disabled={status === 'awaiting' || status === 'processing'}
                   required
                 />
               </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex gap-2 pt-1">
+                {presetAmounts.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    disabled={status === 'awaiting' || status === 'processing'}
+                    onClick={() => setAmount(preset)}
+                    className="flex-1 py-1.5 px-2 bg-[#F8FAFC] dark:bg-white/5 hover:bg-[#ECEEFF] dark:hover:bg-white/10 text-[#334155] dark:text-[#F5F8FF] hover:text-[#1749F5] text-xs font-medium rounded-lg border border-[#E2E8F0] dark:border-white/10 transition-colors"
+                  >
+                    ${preset}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="p-3 bg-[#071013] rounded-lg border border-[#1A2E38] space-y-1 text-xs font-mono">
-              <div className="flex justify-between text-[#AAAAAA]">
-                <span>Settlement Asset:</span>
-                <span className="text-[#DFE0E2]">Sepolia USDC</span>
+            <div className="p-4 bg-[#F8FAFC] dark:bg-white/5 rounded-2xl border border-[#E2E8F0] dark:border-white/10 space-y-2 text-xs sm:text-[13px]">
+              <div className="flex justify-between text-[#64748B] dark:text-[#94A3B8]">
+                <span>Settlement Currency:</span>
+                <span className="text-[#111111] dark:text-[#F5F8FF] font-medium">Native USDC (Base L2)</span>
               </div>
-              <div className="flex justify-between text-[#AAAAAA]">
-                <span>Receiving Payout:</span>
-                <span className="text-[#5465FF]">{truncateAddress(receivingAddress)}</span>
+              <div className="flex justify-between text-[#64748B] dark:text-[#94A3B8]">
+                <span>Tap Execution Speed:</span>
+                <span className="text-[#10B981] font-semibold">&lt; 1.2s Instant Settlement</span>
               </div>
             </div>
 
             {status === 'idle' ? (
-              <Button type="submit" variant="primary" size="lg" className="w-full font-mono text-xs">
+              <Button type="submit" variant="primary" size="lg" className="w-full">
                 <span>Open Terminal For Customer</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                size="md"
                 onClick={handleReset}
-                className="w-full font-mono text-xs"
+                className="w-full gap-1.5"
               >
-                Reset Register
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Register</span>
               </Button>
             )}
           </form>
-        </Card>
+        </div>
 
-        {/* Customer Facing Terminal Screen */}
-        <Card className="p-6 flex flex-col justify-between items-center text-center relative overflow-hidden bg-[#071013] border-[#1A2E38]">
+        {/* Customer Facing Terminal Screen: Soft Lavender Panel Motif */}
+        <div className="bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 rounded-[28px] p-6 sm:p-8 flex flex-col justify-between items-center text-center relative overflow-hidden min-h-[400px] transition-colors shadow-sm font-archivo">
           {status === 'idle' && (
             <div className="my-auto space-y-4">
-              <div className="w-16 h-16 rounded-full bg-[#0E1D24] border border-[#1A2E38] flex items-center justify-center mx-auto text-[#666666]">
+              <div className="w-16 h-16 rounded-2xl bg-white dark:bg-[#09152D] border border-[#DFE3F8] dark:border-white/10 flex items-center justify-center mx-auto text-[#1749F5] dark:text-[#5B8EFF] shadow-sm">
                 <Radio className="w-8 h-8" />
               </div>
               <div>
-                <h4 className="text-sm font-mono font-bold text-[#DFE0E2]">Register Ready</h4>
-                <p className="text-xs font-mono text-[#888888] mt-1 max-w-xs">
+                <h4 className="text-lg font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                  Register Ready
+                </h4>
+                <p className="text-xs sm:text-sm text-[#334155] dark:text-[#A9B9D5] mt-1 max-w-xs leading-relaxed">
                   Enter an amount and click Open Terminal to initiate retail POS settlement.
                 </p>
               </div>
@@ -226,23 +262,23 @@ export default function VirtualTerminalPage() {
           )}
 
           {status === 'awaiting' && (
-            <div className="w-full space-y-4 my-auto">
-              <div className="text-center space-y-1">
-                <Badge variant="active">AWAITING NFC CARD TAP</Badge>
-                <div className="text-3xl font-mono font-bold text-[#DFE0E2] pt-2">
+            <div className="w-full space-y-5 my-auto">
+              <div className="text-center space-y-1.5">
+                <Badge variant="info" dot>AWAITING TAP OR SCAN</Badge>
+                <div className="text-3xl sm:text-4xl font-semibold text-[#111111] dark:text-[#F5F8FF] pt-1 tracking-tight">
                   ${parseFloat(amount || '0').toFixed(2)} USDC
                 </div>
               </div>
 
-              {/* NFC Card UID Input */}
-              <div className="p-4 bg-[#0B161B] rounded-xl border border-[#1A2E38] space-y-3">
-                <div className="flex items-center justify-center gap-2 text-xs font-mono text-indigo-400">
+              {/* NFC Card UID Input inside elevated white card */}
+              <div className="p-5 bg-white dark:bg-[#09152D] rounded-2xl border border-[#DFE3F8] dark:border-white/10 space-y-3.5 shadow-sm text-left">
+                <div className="flex items-center justify-center gap-2 text-xs font-semibold text-[#1749F5] dark:text-[#5B8EFF] uppercase tracking-wider">
                   <Radio className="w-4 h-4 animate-pulse" />
                   <span>Tap NFC Card or Enter UID</span>
                 </div>
 
                 <Input
-                  label="Card UID"
+                  label="Smart Card UID"
                   placeholder="e.g. 04:A2:B3:C4:D5:E6:F7"
                   value={cardUid}
                   onChange={(e) => setCardUid(e.target.value)}
@@ -250,16 +286,16 @@ export default function VirtualTerminalPage() {
 
                 <Button
                   variant="primary"
-                  size="sm"
+                  size="md"
                   onClick={handleExecuteTap}
-                  className="w-full font-mono text-xs"
+                  className="w-full gap-1.5"
                 >
-                  <Zap className="w-3.5 h-3.5 mr-1.5" />
+                  <Zap className="w-4 h-4" />
                   <span>Execute Contactless Tap</span>
                 </Button>
               </div>
 
-              <div className="flex justify-center p-2 bg-white rounded-lg w-fit mx-auto">
+              <div className="flex justify-center p-3 bg-white dark:bg-[#09152D] rounded-2xl w-fit mx-auto shadow-sm border border-[#DFE3F8] dark:border-white/10">
                 <QrCodeDisplay value={paymentUri} size={110} />
               </div>
             </div>
@@ -267,15 +303,15 @@ export default function VirtualTerminalPage() {
 
           {status === 'processing' && (
             <div className="my-auto space-y-4 text-center">
-              <div className="w-16 h-16 rounded-full bg-[#5465FF]/20 border border-[#5465FF] flex items-center justify-center mx-auto text-[#5465FF] animate-spin">
+              <div className="w-16 h-16 rounded-2xl bg-white dark:bg-[#09152D] border border-[#1749F5] flex items-center justify-center mx-auto text-[#1749F5] shadow-sm animate-spin">
                 <Clock className="w-8 h-8" />
               </div>
               <div>
-                <h4 className="text-sm font-mono font-bold text-[#DFE0E2]">
-                  Redeeming ERC-7715 Delegation
+                <h4 className="text-lg font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                  Redeeming Session Key Tap
                 </h4>
-                <p className="text-xs font-mono text-[#888888] mt-1">
-                  Submitting transaction on Ethereum Sepolia and awaiting receipt...
+                <p className="text-xs sm:text-sm text-[#334155] dark:text-[#A9B9D5] mt-1">
+                  Submitting transaction to Base L2 Paymaster...
                 </p>
               </div>
             </div>
@@ -283,39 +319,39 @@ export default function VirtualTerminalPage() {
 
           {status === 'confirmed' && (
             <div className="my-auto space-y-4 text-center w-full">
-              <div className="w-16 h-16 rounded-full bg-emerald-950/60 border border-emerald-500 flex items-center justify-center mx-auto text-emerald-400">
+              <div className="w-16 h-16 rounded-2xl bg-[#ECFDF5] border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-center mx-auto text-[#10B981] shadow-sm">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <div>
-                <h4 className="text-sm font-mono font-bold text-[#DFE0E2]">
+                <h4 className="text-lg font-semibold text-[#111111] dark:text-[#F5F8FF]">
                   Payment Confirmed On-Chain
                 </h4>
-                <p className="text-xs font-mono text-emerald-400 font-bold mt-1">
-                  ${parseFloat(amount || '0').toFixed(2)} USDC Settled
+                <p className="text-sm text-[#10B981] font-semibold mt-1">
+                  ${parseFloat(amount || '0').toFixed(2)} USDC Settled (&lt; 1.2s)
                 </p>
               </div>
 
               {settledTxHash && (
-                <div className="p-3 bg-[#0B161B] rounded-lg border border-[#1A2E38] text-xs font-mono">
-                  <p className="text-[#888888]">Ethereum Sepolia Receipt:</p>
+                <div className="p-4 bg-white dark:bg-[#09152D] rounded-xl border border-[#DFE3F8] dark:border-white/10 text-xs max-w-sm mx-auto shadow-sm">
+                  <p className="text-[#64748B] dark:text-[#94A3B8]">Immutable Receipt:</p>
                   <a
                     href={getExplorerTxUrl(settledTxHash)}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[#5465FF] hover:underline inline-flex items-center gap-1 font-mono text-[11px] mt-1"
+                    className="text-[#1749F5] dark:text-[#5B8EFF] hover:underline inline-flex items-center gap-1 font-mono text-xs mt-1 font-medium"
                   >
                     <span>{truncateAddress(settledTxHash)}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                   {settledBlock && (
-                    <p className="text-[10px] text-[#666666] mt-0.5">
+                    <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8] mt-0.5 font-mono">
                       Block #{settledBlock}
                     </p>
                   )}
                 </div>
               )}
 
-              <Button variant="outline" size="sm" onClick={handleReset} className="font-mono text-xs">
+              <Button variant="primary" size="sm" onClick={handleReset} className="mt-2">
                 New Sale
               </Button>
             </div>
@@ -323,24 +359,24 @@ export default function VirtualTerminalPage() {
 
           {status === 'failed' && (
             <div className="my-auto space-y-4 text-center w-full">
-              <div className="w-16 h-16 rounded-full bg-rose-950/60 border border-rose-500 flex items-center justify-center mx-auto text-rose-400">
+              <div className="w-16 h-16 rounded-2xl bg-[#FEF2F2] border border-red-200 dark:border-red-800/40 flex items-center justify-center mx-auto text-[#EF4444] shadow-sm">
                 <AlertTriangle className="w-8 h-8" />
               </div>
               <div>
-                <h4 className="text-sm font-mono font-bold text-rose-300">
-                  Payment Rejected
+                <h4 className="text-lg font-semibold text-[#EF4444]">
+                  Payment Declined
                 </h4>
-                <p className="text-xs font-mono text-[#AAAAAA] mt-1">
-                  {errorMessage || 'Transaction could not be settled.'}
+                <p className="text-xs sm:text-sm text-[#334155] dark:text-[#A9B9D5] mt-1 max-w-xs mx-auto">
+                  {errorMessage || 'Transaction could not be settled on-chain.'}
                 </p>
               </div>
 
-              <Button variant="outline" size="sm" onClick={handleReset} className="font-mono text-xs">
+              <Button variant="outline" size="sm" onClick={handleReset} className="mt-2">
                 Try Again
               </Button>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   );
