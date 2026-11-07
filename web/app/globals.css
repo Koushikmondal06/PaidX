@@ -33,7 +33,7 @@
 
   html {
     scroll-behavior: smooth;
-    scroll-padding-top: 88px;
+    scroll-padding-top: 80px;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 

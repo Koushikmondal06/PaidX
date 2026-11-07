@@ -36,16 +36,12 @@ export function EthereumIcon({ size = 24, className = '', ...props }: IconProps)
 export function UsdcIcon({ size = 24, className = '', ...props }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={className} {...props}>
-      <circle cx="16" cy="16" r="16" fill="#2775CA" />
-      <path
-        d="M20.5 17.4c0-2-1.3-2.7-3.8-3-1.8-.2-2.2-.6-2.2-1.4s.7-1.3 2-1.3c1.2 0 1.9.4 2.1 1.2.1.2.2.3.4.3h1.2c.2 0 .4-.2.4-.4-.3-1.4-1.4-2.4-3.1-2.6v-1.7c0-.2-.2-.4-.4-.4h-1.3c-.2 0-.4.2-.4.4v1.6c-2 .3-3.2 1.6-3.2 3.1 0 1.9 1.2 2.6 3.7 2.9 1.9.3 2.3.7 2.3 1.5 0 .9-.8 1.4-2.2 1.4-1.5 0-2.3-.5-2.5-1.5-.1-.2-.2-.3-.4-.3h-1.3c-.2 0-.4.2-.4.4.3 1.6 1.6 2.6 3.6 2.8v1.7c0 .2.2.4.4.4h1.3c.2 0 .4-.2.4-.4v-1.6c2.1-.3 3.3-1.6 3.3-3.2z"
-        fill="#FFFFFF"
-      />
-      <path
-        d="M16 27C9.9 27 5 22.1 5 16S9.9 5 16 5s11 4.9 11 11-4.9 11-11 11zm0-20.5C10.8 6.5 6.5 10.8 6.5 16S10.8 25.5 16 25.5 25.5 21.2 25.5 16 21.2 6.5 16 6.5z"
-        fill="#FFFFFF"
-        opacity="0.5"
-      />
+      <circle cx="16" cy="16" r="16" fill="#3B78CD" />
+      <g fill="#FFFFFF">
+        <path d="M12.44 6.5C8.04 8.27 5 12.63 5 16c0 3.37 3.04 7.73 7.44 9.5l.8-1.82C9.4 22.25 7 18.52 7 16c0-2.52 2.4-6.25 6.24-7.68l-.8-1.82z"/>
+        <path d="M19.56 6.5l-.8 1.82C22.6 9.75 25 13.48 25 16c0 2.52-2.4 6.25-6.24 7.68l.8 1.82C23.96 23.73 27 19.37 27 16c0-3.37-3.04-7.73-7.44-9.5z"/>
+        <path d="M17.2 12.8c0-1.1-.9-1.8-2.2-1.8-1.1 0-2 .5-2.2 1.3h-1.4c.2-1.4 1.4-2.4 3-2.6V8h1.2v1.7c1.7.2 2.8 1.2 2.8 2.7 0 1.7-1.1 2.3-3.3 2.7-1.7.3-2.1.7-2.1 1.4 0 .8.8 1.4 2.1 1.4 1.4 0 2.2-.6 2.4-1.5h1.4c-.2 1.6-1.5 2.6-3.3 2.8V22h-1.2v-1.7c-1.8-.3-3-1.4-3-2.9 0-1.7 1.2-2.4 3.4-2.8 1.7-.3 2.3-.7 2.3-1.8z"/>
+      </g>
     </svg>
   );
 }
@@ -71,14 +67,10 @@ export function SolanaIcon({ size = 24, className = '', ...props }: IconProps) {
 
 export function BaseChainIcon({ size = 24, className = '', ...props }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={className} {...props}>
-      <circle cx="16" cy="16" r="16" fill="#0052FF" />
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M16 24C20.4183 24 24 20.4183 24 16C24 11.5817 20.4183 8 16 8C11.8317 8 8.40671 11.1856 8.02637 15.2449H17.854V16.7551H8.02637C8.40671 20.8144 11.8317 24 16 24Z"
-        fill="#FFFFFF"
-      />
+    <svg width={size} height={size} viewBox="0 0 280 280" fill="none" className={className} {...props}>
+      <circle cx="140" cy="140" r="140" fill="#0052FF" />
+      <circle cx="140" cy="140" r="99" fill="#FFFFFF" />
+      <rect x="0" y="132" width="188" height="16" fill="#0052FF" />
     </svg>
   );
 }
