@@ -181,4 +181,31 @@ exports.MCP_TOOL_DEFINITIONS = [
             required: ['transactionId'],
         },
     },
+    // ==========================================
+    // 5. MPC & AUTONOMOUS SIGNING DIAGNOSTIC TOOLS
+    // ==========================================
+    {
+        name: 'get_mpc_enrollment_status',
+        description: 'Queries MPC threshold enrollment status, public key fingerprint, key share distribution, and rotation metadata for the connected account.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
+    {
+        name: 'verify_hedera_account_authorization',
+        description: "Cross-checks on-chain Hedera Mirror Node account key structure to verify whether the account authorizes the user's primary MetaMask key and the PaidX MPC threshold key.",
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
+    {
+        name: 'get_agent_signing_status',
+        description: 'Returns the operational signing state of the agent, including threshold signing provider, share availability, autonomous spending permissions, and session validity.',
+        inputSchema: {
+            type: 'object',
+            properties: {},
+        },
+    },
 ];

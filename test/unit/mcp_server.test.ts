@@ -4,13 +4,18 @@ import { MCP_TOOL_DEFINITIONS } from '../../mcp-server/src/tools.ts';
 import { PAIDX_MCP_TOOLS } from '../../dashboard/lib/mcp/tools.ts';
 
 test('Phase 8 & 9 / Test Cases 15, 16, 17: MCP Protocol, Tool Registry & Cross-Agent Data Isolation', async (t) => {
-  await t.test('Test Case 15: exactly 16 tools registered across both dashboard and mcp-server', () => {
-    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 16);
-    assert.strictEqual(PAIDX_MCP_TOOLS.length, 16);
+  await t.test('Test Case 15: exactly 19 tools registered across both dashboard and mcp-server', () => {
+    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 19);
+    assert.strictEqual(PAIDX_MCP_TOOLS.length, 19);
 
     const mcpServerNames = MCP_TOOL_DEFINITIONS.map((t) => t.name).sort();
     const dashboardNames = PAIDX_MCP_TOOLS.map((t) => t.name).sort();
     assert.deepStrictEqual(mcpServerNames, dashboardNames);
+
+    // Verify presence of 3 new MPC diagnostic tools
+    assert.ok(dashboardNames.includes('get_mpc_enrollment_status'));
+    assert.ok(dashboardNames.includes('verify_hedera_account_authorization'));
+    assert.ok(dashboardNames.includes('get_agent_signing_status'));
   });
 
   await t.test('Test Case 15: verifies MCP initialize handshake specifications', () => {
