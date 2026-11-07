@@ -6,6 +6,7 @@ import { setWalletSigningProvider, resetWalletSigningProvider } from '../../dash
 import { setTestMirrorMock } from '../../dashboard/lib/hedera/mirrorNode.ts';
 import { signRecipientPayment } from '../../dashboard/lib/hedera/signer.ts';
 import { buildTransferTransaction } from '../../dashboard/lib/hedera/hts.ts';
+import { closeHederaClient } from '../../dashboard/lib/hedera/client.ts';
 
 test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Key Structure Verification', async (t) => {
   const payerAccountId = '0.0.123456';
@@ -33,6 +34,10 @@ test('Phase 2 / Test Cases 9 & 10: Wallet Signing Architecture & Key Structure V
   t.afterEach(() => {
     resetWalletSigningProvider();
     setTestMirrorMock(null);
+  });
+
+  t.after(() => {
+    closeHederaClient();
   });
 
   await t.test('Test Case 9: builds exact HTS TransferTransaction with correct payer and recipient', () => {

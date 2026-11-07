@@ -1040,7 +1040,7 @@ static bool executeCardSaleHttp(const char* uidDense, const char* chipSecret, co
 
   HTTPClient http;
   http.setConnectTimeout(6000);
-  http.setTimeout(18000); // Sepolia broadcast + receipt
+  http.setTimeout(45000); // Sepolia broadcast + receipt (45s window for block mining)
   if (!http.begin(url)) {
     Serial.println(F("[http-sale] http.begin failed"));
     strncpy(opFailReason, "HTTP connect failed", sizeof(opFailReason) - 1);

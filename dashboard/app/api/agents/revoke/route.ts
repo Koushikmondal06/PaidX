@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAuthenticatedUser } from '@/lib/server/auth';
+import { delegatedSigner } from '@/lib/hedera/signing/delegatedSigner';
+import { defaultMpcSigner } from '@/lib/hedera/signing/mpcSigner';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +76,21 @@ export async function POST(req: NextRequest) {
       })
       .eq('agent_id', agentId)
       .eq('status', 'reserved');
+
+    // Instantly wipe delegated session key from in-memory signer (Requirement 8)
+    delegatedSigner.unregisterAgentSessionKey(agentId);
+
+    // If connected to a wallet, also purge active MPC signing credentials
+    if (existingAgent.wallet_id) {
+      const { data: w } = await supabase
+        .from('wallets')
+        .select('address')
+        .eq('id', existingAgent.wallet_id)
+        .maybeSingle();
+      if (w?.address) {
+        defaultMpcSigner.unregisterMpcKey(w.address);
+      }
+    }
 
     return NextResponse.json({
       success: true,

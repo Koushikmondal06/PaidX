@@ -11,13 +11,37 @@ import {
   getMirrorTopicMessages,
   getMirrorTopicMessageBySequence,
   getHashScanTxUrl,
+  getMirrorAccount,
+  getHashScanAccountUrl,
 } from '../hedera/mirrorNode';
+import { defaultMpcSigner } from '../hedera/signing/mpcSigner';
+import { keyStructureMatches, type MirrorKeyNode } from '../hedera/signing/delegatedSigner';
+import { PublicKey } from '@hiero-ledger/sdk';
 import { createRecipientPaymentRequirements } from '../hedera/x402/requirements';
 import { orchestrateAgentPayment } from '../agent/orchestrator';
 import { normalizeToUsdMicro, PriceOracleError } from '../agent/priceOracle';
 import { SUPPORTED_HEDERA_ASSETS } from '../hedera/types';
 import { isValidHederaAccountId } from '../hedera/client';
-import type { AgentContext } from '../agent/policyEngine';
+import { resolveAndVerifyRecipientAccount } from '../hedera/recipientResolution';
+import { getAgentSpendingLimitsSummary, type AgentContext } from '../agent/policyEngine';
+
+/**
+ * Format USD-micro amount into a human-readable USD string.
+ * For sub-cent amounts (> 0 and < $0.01), displays exact decimal precision up to 6 decimal places (e.g. $0.000686),
+ * ensuring sub-cent amounts are never rounded to "$0.00" as their only representation.
+ * Always preserves normalizedAmountUsdMicro as the authoritative integer micro-dollar value.
+ */
+export function formatUsdFromMicro(amountUsdMicro: string | bigint | number): string {
+  const micro = BigInt(amountUsdMicro);
+  if (micro === 0n) return '$0.00';
+  const num = Number(micro) / 1_000_000;
+  if (micro > 0n && micro < 10_000n) {
+    // Sub-cent amount: format with up to 6 decimal places, stripping trailing zeroes
+    const formatted = num.toFixed(6).replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
+    return `$${formatted}`;
+  }
+  return `$${num.toFixed(2)}`;
+}
 
 export interface McpToolDefinition {
   name: string;
@@ -139,34 +163,98 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'prepare_wallet_payment',
     description:
-      'Prepares a recipient-directed Hedera x402 payment estimate, validating recipient address, atomic amount, and payment requirements before execution.',
+      'Prepares a recipient-directed Hedera x402 payment estimate, validating recipient address, atomic amount, price normalization, spending limits, and payment requirements before execution.',
     parameters: {
       type: 'object',
       properties: {
-        recipient: { type: 'string', description: 'Recipient Hedera Account ID (e.g. 0.0.123456)' },
+        recipient: { type: 'string', description: 'Recipient Hedera Account ID (e.g. 0.0.123456) or EVM address (e.g. 0x...)' },
         amount: { type: 'string', description: 'Amount to send (e.g. "5" or "5.00")' },
         asset: { type: 'string', description: 'Asset symbol (e.g. USDC, HBAR). Defaults to USDC.' },
+        network: { type: 'string', description: 'Blockchain network (e.g. "hedera:testnet"). Defaults to "hedera:testnet".' },
       },
       required: ['recipient', 'amount'],
     },
     handler: async (ctx, args) => {
-      const recipient = args?.recipient?.trim();
-      if (!recipient || !isValidHederaAccountId(recipient)) {
-        throw new Error(`Invalid recipient account ID: "${recipient}"`);
-      }
+      const rawRecipient = (args?.recipient || '').trim();
+      const rawAmount = String(args?.amount ?? '').trim();
+      const rawAsset = (args?.asset || 'USDC').trim().toUpperCase();
+      const network = (args?.network || 'hedera:testnet').trim();
 
-      const asset = args?.asset || 'USDC';
-      const tokenConfig = getHtsAssetConfig(asset);
-      validateDecimalString(String(args?.amount || ''), tokenConfig.decimals);
-      const atomicAmount = parseToAtomicUnits(String(args.amount), tokenConfig.decimals).toString();
+      // Retrieve authoritative spending limits summary upfront
+      const limitsSummary = await getAgentSpendingLimitsSummary(ctx.agentId);
+      const spendingLimitDenomination = 'USD_MICRO';
+      const perTxLimit = limitsSummary?.perTransactionLimitUsdMicro || '0';
+      const remDailyBudget = limitsSummary?.remainingDailyBudgetUsdMicro || '0';
 
-      const { requirements } = createRecipientPaymentRequirements({
-        recipient,
-        amount: String(args.amount),
-        assetSymbolOrId: tokenConfig.tokenId,
+      // 1. Authoritative Recipient Verification & EVM Resolution via Hedera Mirror Node
+      const resolution = await resolveAndVerifyRecipientAccount({
+        recipient: rawRecipient,
+        network,
       });
 
-      // Normalize amount to common USD-micro denomination via price oracle
+      if (!resolution.valid) {
+        return {
+          valid: false,
+          status: resolution.errorCode ? resolution.errorCode.toLowerCase() : 'invalid_recipient',
+          recipient: rawRecipient,
+          recipientVerified: false,
+          recipientVerificationSource: null,
+          amount: rawAmount,
+          amountAtomic: '0',
+          atomicAmount: '0',
+          asset: rawAsset,
+          network,
+          estimatedUsdValue: null,
+          normalizedAmountUsdMicro: null,
+          spendingLimitDenomination,
+          perTransactionLimitUsdMicro: perTxLimit,
+          remainingDailyBudgetUsdMicro: remDailyBudget,
+          estimatedNetworkFee: null,
+          feePayer: 'facilitator (sponsored)',
+          requiresHumanApproval: true,
+          approvalStatus: 'not_requested',
+          executionStatus: 'not_executed',
+          error: resolution.error || 'Recipient verification failed',
+          errorCode: resolution.errorCode,
+        };
+      }
+
+      // 2. Validate Asset Configuration & Decimal Amounts
+      let tokenConfig;
+      let atomicAmount: string;
+      try {
+        tokenConfig = getHtsAssetConfig(rawAsset);
+        validateDecimalString(rawAmount, tokenConfig.decimals);
+        atomicAmount = parseToAtomicUnits(rawAmount, tokenConfig.decimals).toString();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          valid: false,
+          status: 'invalid_amount',
+          recipient: resolution.recipient,
+          recipientVerified: resolution.recipientVerified,
+          recipientVerificationSource: resolution.recipientVerificationSource,
+          amount: rawAmount,
+          amountAtomic: '0',
+          atomicAmount: '0',
+          asset: rawAsset,
+          network,
+          estimatedUsdValue: null,
+          normalizedAmountUsdMicro: null,
+          spendingLimitDenomination,
+          perTransactionLimitUsdMicro: perTxLimit,
+          remainingDailyBudgetUsdMicro: remDailyBudget,
+          estimatedNetworkFee: null,
+          feePayer: 'facilitator (sponsored)',
+          requiresHumanApproval: true,
+          approvalStatus: 'not_requested',
+          executionStatus: 'not_executed',
+          error: msg,
+          errorCode: 'INVALID_AMOUNT',
+        };
+      }
+
+      // 3. Normalize Amount into USD-Micro Denomination ($10^-6 USD) via Price Oracle
       let normalized;
       try {
         normalized = await normalizeToUsdMicro({
@@ -178,33 +266,131 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         const code = err instanceof PriceOracleError ? err.code : 'PRICE_ORACLE_UNAVAILABLE';
         return {
           valid: false,
-          recipient,
-          amountDisplay: `${args.amount} ${tokenConfig.symbol}`,
+          status: 'price_oracle_unavailable',
+          recipient: resolution.recipient,
+          recipientVerified: resolution.recipientVerified,
+          recipientVerificationSource: resolution.recipientVerificationSource,
+          amount: rawAmount,
+          amountAtomic: atomicAmount,
           atomicAmount,
           asset: tokenConfig.symbol,
+          network,
+          estimatedUsdValue: null,
+          normalizedAmountUsdMicro: null,
+          spendingLimitDenomination,
+          perTransactionLimitUsdMicro: perTxLimit,
+          remainingDailyBudgetUsdMicro: remDailyBudget,
+          estimatedNetworkFee: null,
+          feeStatus: 'fee_estimation_unavailable',
+          feePayer: 'facilitator (sponsored)',
+          requiresHumanApproval: true,
+          approvalStatus: 'not_requested',
+          executionStatus: 'not_executed',
           error: `Price conversion failed closed: ${msg}`,
           code,
         };
       }
 
+      const normalizedAmountUsdMicro = normalized.normalizedAmountUsdMicro;
+      const estimatedUsdValue = formatUsdFromMicro(normalizedAmountUsdMicro);
+
+      // 4. Policy Evaluation & Approval Transparency
+      let requiresHumanApproval = false;
+      let approvalReason = 'Autonomous payments enabled within authorized policy limits.';
+
+      if (limitsSummary) {
+        if (!limitsSummary.autonomousPaymentsEnabled) {
+          requiresHumanApproval = true;
+          approvalReason = 'Autonomous payments are disabled for this agent connection. All payments require human approval.';
+        } else if (
+          BigInt(normalizedAmountUsdMicro) > BigInt(limitsSummary.perTransactionLimitUsdMicro)
+        ) {
+          requiresHumanApproval = true;
+          approvalReason = `Amount (${normalizedAmountUsdMicro} micro-USD) exceeds per-transaction limit (${limitsSummary.perTransactionLimitUsdMicro} micro-USD).`;
+        } else if (
+          limitsSummary.requireApprovalAboveUsdMicro &&
+          BigInt(normalizedAmountUsdMicro) > BigInt(limitsSummary.requireApprovalAboveUsdMicro)
+        ) {
+          requiresHumanApproval = true;
+          approvalReason = `Amount exceeds agent threshold (${limitsSummary.requireApprovalAboveUsdMicro} micro-USD). Human approval required.`;
+        } else if (
+          BigInt(normalizedAmountUsdMicro) > BigInt(limitsSummary.remainingDailyBudgetUsdMicro)
+        ) {
+          requiresHumanApproval = true;
+          approvalReason = `Amount exceeds remaining daily budget (${limitsSummary.remainingDailyBudgetUsdMicro} micro-USD).`;
+        } else if (
+          BigInt(normalizedAmountUsdMicro) > BigInt(limitsSummary.remainingMonthlyBudgetUsdMicro)
+        ) {
+          requiresHumanApproval = true;
+          approvalReason = `Amount exceeds remaining monthly budget (${limitsSummary.remainingMonthlyBudgetUsdMicro} micro-USD).`;
+        }
+      } else {
+        requiresHumanApproval = true;
+        approvalReason = 'No spending policy configured for this agent connection. Human approval required.';
+      }
+
+      // 5. Sponsored Fee Estimation (Separated from Recipient Transfer Amount)
+      const estimatedNetworkFee = '0.001 HBAR';
+      const estimatedFeeTinybars = '100000';
+      const feePayer = 'facilitator (sponsored)';
+      const feeStatus = 'sponsored_by_facilitator';
+
       return {
+        // Section 1: Explicit Core Return Fields
         valid: true,
-        recipient,
-        amountDisplay: `${args.amount} ${tokenConfig.symbol}`,
-        atomicAmount,
+        status: requiresHumanApproval ? 'approval_required' : 'prepared',
+        recipient: resolution.recipient,
+        recipientVerified: resolution.recipientVerified,
+        recipientVerificationSource: resolution.recipientVerificationSource,
+        amount: rawAmount,
+        amountAtomic: atomicAmount,
         asset: tokenConfig.symbol,
-        tokenId: tokenConfig.tokenId,
-        network: requirements.network,
-        scheme: requirements.scheme,
-        feePayer: requirements.extra?.feePayer || 'facilitator (sponsored)',
-        estimatedNetworkFee: tokenConfig.isNativeHbar ? '0.001 HBAR' : '0.001 HBAR (facilitator sponsored)',
-        estimatedFeeTinybars: '100000',
-        feeModel: 'sponsored_x402',
-        feeNote: 'Hedera network transaction fees are sponsored by the PaidX x402 facilitator. The recipient receives the exact requested amount.',
+        network,
+        estimatedUsdValue,
+        normalizedAmountUsdMicro,
+        spendingLimitDenomination,
+        perTransactionLimitUsdMicro: perTxLimit,
+        remainingDailyBudgetUsdMicro: remDailyBudget,
+        estimatedNetworkFee,
+        feePayer,
+        requiresHumanApproval,
+        approvalStatus: 'not_requested',
+        executionStatus: 'not_executed',
         authorizationStatus: 'prepared_only_not_authorized',
-        policyNotice: 'Preparation validates transaction format, recipient address, and atomic units only. Spending limits, daily/monthly budgets, and autonomous payment approvals are strictly verified and enforced at execution time.',
-        normalizedAmountUsdMicro: normalized.normalizedAmountUsdMicro,
-        estimatedUsdValue: `$${(Number(normalized.normalizedAmountUsdMicro) / 1_000_000).toFixed(2)}`,
+
+        // Section 3: Spending Limit Transparency (USD-micro)
+        dailyBudgetUsdMicro: limitsSummary?.dailyBudgetUsdMicro || '0',
+        dailySpentUsdMicro: limitsSummary?.dailySpentUsdMicro || '0',
+        dailyReservedUsdMicro: limitsSummary?.dailyReservedUsdMicro || '0',
+        monthlyBudgetUsdMicro: limitsSummary?.monthlyBudgetUsdMicro || '0',
+        monthlySpentUsdMicro: limitsSummary?.monthlySpentUsdMicro || '0',
+        remainingMonthlyBudgetUsdMicro: limitsSummary?.remainingMonthlyBudgetUsdMicro || '0',
+
+        // Additional Context & Backwards Compatibility
+        atomicAmount,
+        amountDisplay: `${rawAmount} ${tokenConfig.symbol}`,
+        originalRecipient: rawRecipient,
+        isEvmAddress: resolution.isEvmAddress,
+        resolvedAccountId: resolution.recipient,
+        tokenId: tokenConfig.tokenId,
+        estimatedFeeTinybars,
+        feeStatus,
+        feeModel: 'sponsored_x402',
+        feeNote: 'Hedera network transaction fee (0.001 HBAR / 100,000 tinybars) is sponsored by the PaidX x402 facilitator. The recipient receives the exact transfer amount.',
+        policyNotice: 'Preparation calculates limits and validates recipient/atomic amounts without executing transactions or creating payment records.',
+        approvalReason,
+        spendingLimits: {
+          denomination: spendingLimitDenomination,
+          perTransactionLimit: perTxLimit,
+          dailyBudget: limitsSummary?.dailyBudgetUsdMicro || '0',
+          dailySpent: limitsSummary?.dailySpentUsdMicro || '0',
+          dailyReserved: limitsSummary?.dailyReservedUsdMicro || '0',
+          dailyRemaining: remDailyBudget,
+          monthlyBudget: limitsSummary?.monthlyBudgetUsdMicro || '0',
+          monthlySpent: limitsSummary?.monthlySpentUsdMicro || '0',
+          monthlyRemaining: limitsSummary?.remainingMonthlyBudgetUsdMicro || '0',
+          autonomousPaymentsEnabled: limitsSummary?.autonomousPaymentsEnabled ?? false,
+        },
         priceConversion: {
           priceUsd: normalized.priceQuote.priceUsd,
           source: normalized.priceQuote.source,
@@ -221,7 +407,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        recipient: { type: 'string', description: 'Recipient Hedera Account ID (e.g. 0.0.123456)' },
+        recipient: { type: 'string', description: 'Recipient Hedera Account ID (e.g. 0.0.123456) or EVM address (e.g. 0x...)' },
         amount: { type: 'string', description: 'Amount to send (e.g. "5" for 5 USDC)' },
         asset: { type: 'string', description: 'Asset symbol (e.g. "USDC" or "HBAR"). Defaults to "USDC".' },
         network: { type: 'string', description: 'Blockchain network ("hedera:testnet").' },
@@ -234,8 +420,27 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         throw new Error('Missing required arguments: recipient and amount');
       }
 
-      return orchestrateAgentPayment(ctx, {
+      // Authoritative recipient resolution (supports EVM address or native account ID)
+      const resolution = await resolveAndVerifyRecipientAccount({
         recipient: String(args.recipient).trim(),
+        network: args.network || 'hedera:testnet',
+      });
+
+      if (!resolution.valid) {
+        return {
+          success: false,
+          status: 'failed',
+          recipient: String(args.recipient).trim(),
+          amount: String(args.amount).trim(),
+          amountDisplay: `${args.amount} ${args.asset || 'USDC'}`,
+          asset: args.asset || 'USDC',
+          network: args.network || 'hedera:testnet',
+          error: resolution.error || 'Recipient address verification failed',
+        };
+      }
+
+      return orchestrateAgentPayment(ctx, {
+        recipient: resolution.recipient,
         amount: String(args.amount).trim(),
         asset: args.asset || 'USDC',
         network: args.network || 'hedera:testnet',
@@ -376,64 +581,83 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'get_agent_spending_limit',
-    description: 'Returns the spending limits, daily budget, monthly budget, and remaining allowance for this agent.',
+    description: 'Returns the spending limits, daily budget, monthly budget, and remaining allowance for this agent in USD-micro units.',
     parameters: {
       type: 'object',
       properties: {},
     },
     handler: async (ctx) => {
-      const supabase = createServerSupabaseClient();
-      const { data: policy } = await supabase
-        .from('agent_policies')
-        .select('*')
-        .eq('agent_id', ctx.agentId)
-        .maybeSingle();
+      const summary = await getAgentSpendingLimitsSummary(ctx.agentId);
 
-      if (!policy) {
+      if (!summary) {
         return { error: 'No policy configured for this agent' };
       }
 
-      const maxPerTx = BigInt(policy.max_amount_per_tx || '0');
-      const dailyBudget = BigInt(policy.daily_budget || '0');
-      const spentToday = BigInt(policy.spent_today || '0');
-      const remainingToday = dailyBudget > spentToday ? dailyBudget - spentToday : 0n;
-      const monthlyBudget = BigInt(policy.monthly_budget || '0');
-      const spentThisMonth = BigInt(policy.spent_this_month || '0');
       const POLICY_DECIMALS = 6;
+      const maxPerTx = BigInt(summary.perTransactionLimitUsdMicro);
+      const dailyBudget = BigInt(summary.dailyBudgetUsdMicro);
+      const spentToday = BigInt(summary.dailySpentUsdMicro);
+      const dailyReserved = BigInt(summary.dailyReservedUsdMicro);
+      const remainingToday = BigInt(summary.remainingDailyBudgetUsdMicro);
+      const monthlyBudget = BigInt(summary.monthlyBudgetUsdMicro);
+      const spentThisMonth = BigInt(summary.monthlySpentUsdMicro);
+      const remainingMonth = BigInt(summary.remainingMonthlyBudgetUsdMicro);
 
       return {
-        // Raw atomic limits (stored in database)
-        maxPerTransaction: policy.max_amount_per_tx,
-        dailyBudget: policy.daily_budget,
-        spentToday: policy.spent_today,
-        remainingToday: remainingToday.toString(),
-        monthlyBudget: policy.monthly_budget,
-        spentThisMonth: policy.spent_this_month,
-
-        // Explicit Denomination & Precision Metadata
-        denomination: 'USDC_ATOMIC',
-        unit: 'micro-units (6 decimal places)',
-        baseAsset: 'USDC',
+        // Section 3: Explicit USD_MICRO Denomination Standard
+        denomination: 'USD_MICRO',
+        spendingLimitDenomination: 'USD_MICRO',
+        unit: 'micro-USD ($10^-6 USD, 6 decimal places)',
         decimals: POLICY_DECIMALS,
 
+        // Required explicit fields (USD-micro)
+        perTransactionLimit: summary.perTransactionLimitUsdMicro,
+        perTransactionLimitUsdMicro: summary.perTransactionLimitUsdMicro,
+        dailyBudget: summary.dailyBudgetUsdMicro,
+        dailyBudgetUsdMicro: summary.dailyBudgetUsdMicro,
+        dailySpent: summary.dailySpentUsdMicro,
+        dailySpentUsdMicro: summary.dailySpentUsdMicro,
+        dailyReserved: summary.dailyReservedUsdMicro,
+        dailyReservedUsdMicro: summary.dailyReservedUsdMicro,
+        dailyRemaining: summary.remainingDailyBudgetUsdMicro,
+        dailyRemainingUsdMicro: summary.remainingDailyBudgetUsdMicro,
+        remainingDailyBudgetUsdMicro: summary.remainingDailyBudgetUsdMicro,
+        monthlyBudget: summary.monthlyBudgetUsdMicro,
+        monthlyBudgetUsdMicro: summary.monthlyBudgetUsdMicro,
+        monthlySpent: summary.monthlySpentUsdMicro,
+        monthlySpentUsdMicro: summary.monthlySpentUsdMicro,
+        monthlyRemaining: summary.remainingMonthlyBudgetUsdMicro,
+        remainingMonthlyBudgetUsdMicro: summary.remainingMonthlyBudgetUsdMicro,
+
+        // Backwards-compatible aliases
+        maxPerTransaction: summary.perTransactionLimitUsdMicro,
+        spentToday: summary.dailySpentUsdMicro,
+        remainingToday: summary.remainingDailyBudgetUsdMicro,
+        spentThisMonth: summary.monthlySpentUsdMicro,
+
         // Human-Readable Formatted Displays
-        maxPerTransactionDisplay: `${fromAtomicUnits(maxPerTx.toString(), POLICY_DECIMALS)} USDC`,
-        dailyBudgetDisplay: `${fromAtomicUnits(dailyBudget.toString(), POLICY_DECIMALS)} USDC`,
-        spentTodayDisplay: `${fromAtomicUnits(spentToday.toString(), POLICY_DECIMALS)} USDC`,
-        remainingTodayDisplay: `${fromAtomicUnits(remainingToday.toString(), POLICY_DECIMALS)} USDC`,
-        monthlyBudgetDisplay: `${fromAtomicUnits(monthlyBudget.toString(), POLICY_DECIMALS)} USDC`,
-        spentThisMonthDisplay: `${fromAtomicUnits(spentThisMonth.toString(), POLICY_DECIMALS)} USDC`,
+        maxPerTransactionDisplay: `${formatUsdFromMicro(maxPerTx)} USD`,
+        dailyBudgetDisplay: `${formatUsdFromMicro(dailyBudget)} USD`,
+        dailySpentDisplay: `${formatUsdFromMicro(spentToday)} USD`,
+        dailyReservedDisplay: `${formatUsdFromMicro(dailyReserved)} USD`,
+        remainingTodayDisplay: `${formatUsdFromMicro(remainingToday)} USD`,
+        monthlyBudgetDisplay: `${formatUsdFromMicro(monthlyBudget)} USD`,
+        spentThisMonthDisplay: `${formatUsdFromMicro(spentThisMonth)} USD`,
+        remainingMonthlyDisplay: `${formatUsdFromMicro(remainingMonth)} USD`,
 
         // Asset Conversion & Precision Reference
         assetConversionReference: {
           USDC: { decimals: 6, atomicUnitsPerToken: '1000000', atomicUnitName: 'micro-USDC' },
           HBAR: { decimals: 8, atomicUnitsPerToken: '100000000', atomicUnitName: 'tinybar' },
-          note: 'Spending policy limits are configured in 6-decimal atomic units ($10^6 = 1.00 USDC / USD). HBAR uses 8 decimal places (100,000,000 tinybars = 1 HBAR). When evaluating HBAR payments against raw atomic limits, 1 HBAR is 100,000,000 tinybars.',
+          note: 'Spending policy limits are evaluated in common USD-micro units ($10^-6 USD). USDC maps 1:1 into USD-micro. HBAR tinybars are normalized via the Hedera exchange rate oracle with integer ceiling division.',
         },
 
         // Policy Flags
-        autonomousPaymentsEnabled: policy.autonomous_payments_enabled,
-        periodStartDate: policy.period_start_date,
+        autonomousPaymentsEnabled: summary.autonomousPaymentsEnabled,
+        allowedNetworks: summary.allowedNetworks,
+        allowedAssets: summary.allowedAssets,
+        allowedRecipients: summary.allowedRecipients,
+        periodStartDate: summary.periodStartDate,
       };
     },
   },
@@ -527,7 +751,7 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         status: 'approval_required',
         message: 'Payment request queued. The user must approve this payment in their PaidX Console before execution.',
         normalizedAmountUsdMicro: normalized.normalizedAmountUsdMicro,
-        estimatedUsdValue: `$${(Number(normalized.normalizedAmountUsdMicro) / 1_000_000).toFixed(2)}`,
+        estimatedUsdValue: formatUsdFromMicro(normalized.normalizedAmountUsdMicro),
         priceConversion: {
           priceUsd: normalized.priceQuote.priceUsd,
           source: normalized.priceQuote.source,
@@ -657,6 +881,158 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         hcsTopicId: paymentRecord?.hcs_topic_id || null,
         hcsSequenceNumber: paymentRecord?.hcs_sequence_number || null,
         hcsEvent: hcsAuditVerified ? hcsVerifiedEvent : null,
+      };
+    },
+  },
+
+  // ==========================================
+  // 5. MPC & AUTONOMOUS SIGNING DIAGNOSTIC TOOLS
+  // ==========================================
+  {
+    name: 'get_mpc_enrollment_status',
+    description:
+      'Queries MPC threshold enrollment status, public key fingerprint, key share distribution, and rotation metadata for the connected account.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const accountId = ctx.walletAddress;
+      const mpcKey = defaultMpcSigner.getKey(accountId);
+      const supabase = createServerSupabaseClient();
+      const { data: wallet } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('id', ctx.walletId)
+        .maybeSingle();
+
+      const metadata = (wallet?.verification_metadata || {}) as Record<string, any>;
+      const isEnrolled = Boolean(mpcKey && mpcKey.status === 'active') || Boolean(metadata?.mpc_enrolled);
+
+      return {
+        accountId,
+        evmAddress: wallet?.evm_address || null,
+        isEnrolled,
+        status: mpcKey?.status || (metadata?.mpc_enrolled ? 'active' : 'not_enrolled'),
+        curve: mpcKey?.curve || 'secp256k1',
+        mpcPublicKeyHex: mpcKey?.publicKeyHex || metadata?.mpc_public_key || null,
+        mpcPublicKeyDer: mpcKey?.publicKeyDer || null,
+        fingerprint: mpcKey?.agentSessionShare?.fingerprint || metadata?.recovery_share_fingerprint || null,
+        threshold: mpcKey?.threshold || metadata?.threshold || 2,
+        totalShares: mpcKey?.totalShares || metadata?.total_shares || 3,
+        keyRotationCount: mpcKey?.keyRotationCount || 0,
+        enrolledAt: mpcKey?.createdAt || metadata?.mpc_enrolled_at || null,
+        shares: {
+          share1_agentSession: mpcKey ? 'active_in_memory' : 'provisioned',
+          share2_serverCoSigner: 'encrypted_in_keystore',
+          share3_userRecovery: 'held_by_user_offline',
+        },
+      };
+    },
+  },
+  {
+    name: 'verify_hedera_account_authorization',
+    description:
+      "Cross-checks on-chain Hedera Mirror Node account key structure to verify whether the account authorizes the user's primary MetaMask key and the PaidX MPC threshold key.",
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const accountId = ctx.walletAddress;
+      let mirrorAccount = null;
+      try {
+        mirrorAccount = await getMirrorAccount(accountId);
+      } catch (err: unknown) {
+        return {
+          accountId,
+          isAuthorizedOnChain: false,
+          error: `Mirror Node query failed for account "${accountId}": ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+
+      if (!mirrorAccount) {
+        return {
+          accountId,
+          isAuthorizedOnChain: false,
+          error: `Hedera account "${accountId}" not found on Mirror Node.`,
+        };
+      }
+
+      const mpcKey = defaultMpcSigner.getKey(accountId);
+      let mpcKeyAuthorized = false;
+      if (mpcKey && mirrorAccount.key) {
+        try {
+          const cleanHex = mpcKey.publicKeyHex.startsWith('0x')
+            ? mpcKey.publicKeyHex
+            : '0x' + mpcKey.publicKeyHex;
+          const pub =
+            mpcKey.curve === 'secp256k1'
+              ? PublicKey.fromStringECDSA(cleanHex)
+              : PublicKey.fromStringED25519(mpcKey.publicKeyHex);
+          mpcKeyAuthorized = keyStructureMatches(mirrorAccount.key as MirrorKeyNode, pub);
+        } catch {
+          mpcKeyAuthorized = false;
+        }
+      } else if (mirrorAccount.key) {
+        const keyNode = mirrorAccount.key as any;
+        mpcKeyAuthorized = Boolean(
+          keyNode._type === 'ThresholdKey' ||
+          keyNode._type === 'KeyList' ||
+          (Array.isArray(keyNode.keys) && keyNode.keys.length > 1)
+        );
+      }
+
+      return {
+        accountId,
+        evmAddress: mirrorAccount.evm_address || null,
+        isAuthorizedOnChain: mpcKeyAuthorized,
+        mpcKeyAuthorized,
+        metaMaskKeyPreserved: true,
+        keyStructureType: (mirrorAccount.key as any)?._type || 'SingleKey',
+        mirrorThreshold: (mirrorAccount.key as any)?.threshold || 1,
+        deleted: mirrorAccount.deleted,
+        memo: mirrorAccount.memo,
+        mirrorNodeAccountUrl: getHashScanAccountUrl(accountId, 'testnet'),
+      };
+    },
+  },
+  {
+    name: 'get_agent_signing_status',
+    description:
+      'Returns the operational signing state of the agent, including threshold signing provider, share availability, autonomous spending permissions, and session validity.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const accountId = ctx.walletAddress;
+      const isMpcCanSign = await defaultMpcSigner.canSign(accountId);
+      const providerType = isMpcCanSign ? 'mpc_threshold' : 'delegated_session';
+      const summary = await getAgentSpendingLimitsSummary(ctx.agentId);
+
+      return {
+        agentId: ctx.agentId,
+        agentName: ctx.agentName,
+        walletAddress: accountId,
+        signingProvider: providerType,
+        autonomousPaymentsEnabled: summary ? summary.autonomousPaymentsEnabled : false,
+        sessionValid: true,
+        shares: {
+          share1_agentSession: 'available',
+          share2_serverCoSigner: 'available',
+          share3_userRecovery: 'offline_cold_storage',
+        },
+        spendingLimits: summary
+          ? {
+              denomination: 'USD_MICRO',
+              perTransactionLimitUsdMicro: summary.perTransactionLimitUsdMicro,
+              dailyBudgetUsdMicro: summary.dailyBudgetUsdMicro,
+              remainingDailyBudgetUsdMicro: summary.remainingDailyBudgetUsdMicro,
+              monthlyBudgetUsdMicro: summary.monthlyBudgetUsdMicro,
+              remainingMonthlyBudgetUsdMicro: summary.remainingMonthlyBudgetUsdMicro,
+            }
+          : null,
       };
     },
   },

@@ -33,7 +33,14 @@ import {
   ChevronRight,
   Cpu,
 } from 'lucide-react';
-import { HEDERA_TESTNET_CHAIN_PARAMS } from '@/lib/hedera/chain';
+import {
+  HEDERA_TESTNET_CHAIN_PARAMS,
+  HEDERA_TESTNET_RPC_URL,
+  ensureHederaTestnetNetwork,
+  testHederaRpcConnectivity,
+  MetaMaskError,
+  type RpcTestResult,
+} from '@/lib/hedera/chain';
 import { getPublicMcpServerUrl, buildMcpClientConfig } from '@/lib/config/mcp';
 
 interface AgentItem {
@@ -80,6 +87,9 @@ interface HederaWalletInfo {
   publicKey?: string;
   evmAddress?: string | null;
   signerType?: string;
+  smartAccountUpgraded?: boolean;
+  mpcEnrolled?: boolean;
+  verificationMetadata?: Record<string, any> | null;
   isPrimary: boolean;
   hashScanUrl: string;
   balance?: {
@@ -273,6 +283,28 @@ export default function AgentWalletPage() {
     loadData();
   }, [userId]);
 
+  // RPC Connectivity Test State
+  const [isTestingRpc, setIsTestingRpc] = useState(false);
+  const [rpcStatus, setRpcStatus] = useState<RpcTestResult | null>(null);
+
+  const handleTestRpc = async () => {
+    setIsTestingRpc(true);
+    setRpcStatus(null);
+    try {
+      const result = await testHederaRpcConnectivity();
+      setRpcStatus(result);
+    } catch (err: unknown) {
+      setRpcStatus({
+        success: false,
+        rpcUrl: HEDERA_TESTNET_RPC_URL,
+        error: err instanceof Error ? err.message : 'Failed to test RPC connectivity',
+        checks: { eth_chainId: false, eth_blockNumber: false, eth_getBalance: false },
+      });
+    } finally {
+      setIsTestingRpc(false);
+    }
+  };
+
   // Handle MetaMask Hedera Testnet Wallet Linking
   const handleLinkMetaMask = async () => {
     setWalletLinkError(null);
@@ -281,43 +313,34 @@ export default function AgentWalletPage() {
 
     try {
       if (typeof window === 'undefined' || !(window as any).ethereum) {
-        throw new Error(
-          'MetaMask extension is not detected in your browser. Please install MetaMask to use 1-click EVM wallet linking.'
+        throw new MetaMaskError(
+          'MetaMask extension is not detected in your browser. Please install MetaMask to use 1-click EVM wallet linking.',
+          -32603
         );
       }
 
       const ethereum = (window as any).ethereum;
 
-      // 1. Request accounts
+      // 1. Request accounts with user consent
       setMetaMaskStatusText('Connecting to MetaMask...');
-      const accounts: string[] = await ethereum.request({ method: 'eth_requestAccounts' });
+      let accounts: string[];
+      try {
+        accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      } catch (reqErr: any) {
+        if (reqErr?.code === 4001 || reqErr?.message?.toLowerCase().includes('user rejected')) {
+          throw new MetaMaskError('Connection request was cancelled in MetaMask.', 4001);
+        }
+        throw reqErr;
+      }
+
       if (!accounts || accounts.length === 0) {
-        throw new Error('No accounts selected in MetaMask.');
+        throw new MetaMaskError('No accounts selected in MetaMask.', -32603);
       }
       const evmAddress = accounts[0];
 
       // 2. Ensure connected to Hedera Testnet (Chain ID 296 / 0x128)
-      setMetaMaskStatusText('Switching to Hedera Testnet (Chain ID 296)...');
-      const currentChainIdHex: string = await ethereum.request({ method: 'eth_chainId' });
-      const currentChainId = parseInt(currentChainIdHex, 16);
-
-      if (currentChainId !== 296) {
-        try {
-          await ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x128' }],
-          });
-        } catch (switchErr: any) {
-          if (switchErr.code === 4902 || switchErr?.data?.originalError?.code === 4902) {
-            await ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [HEDERA_TESTNET_CHAIN_PARAMS],
-            });
-          } else {
-            throw switchErr;
-          }
-        }
-      }
+      setMetaMaskStatusText('Ensuring connection to Hedera Testnet (Chain ID 296)...');
+      await ensureHederaTestnetNetwork(ethereum);
 
       // 3. Request server-issued challenge
       setMetaMaskStatusText('Requesting single-use verification challenge...');
@@ -345,12 +368,23 @@ export default function AgentWalletPage() {
         throw new Error(chalData.error || 'Failed to issue verification challenge.');
       }
 
-      // 4. Request personal_sign signature
+      // 4. Request personal_sign signature from MetaMask with cancellation handling
       setMetaMaskStatusText('Please sign the verification message in MetaMask...');
-      const signature: string = await ethereum.request({
-        method: 'personal_sign',
-        params: [chalData.challenge, evmAddress],
-      });
+      let signature: string;
+      try {
+        signature = await ethereum.request({
+          method: 'personal_sign',
+          params: [chalData.challenge, evmAddress],
+        });
+      } catch (signErr: any) {
+        if (signErr?.code === 4001 || signErr?.message?.toLowerCase().includes('user rejected')) {
+          throw new MetaMaskError(
+            'Signature request was cancelled in MetaMask. You must sign the verification message to verify wallet ownership.',
+            4001
+          );
+        }
+        throw signErr;
+      }
 
       // 5. Submit signed challenge to server for verification & Mirror Node lookup
       setMetaMaskStatusText('Resolving Hedera account on Mirror Node...');
@@ -384,7 +418,15 @@ export default function AgentWalletPage() {
         setMetaMaskStatusText(null);
       }, 2000);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'MetaMask linking failed';
+      console.error('[MetaMask Link Error]:', err);
+      const isMetaMaskErr = err instanceof MetaMaskError;
+      const code = (err as any)?.code;
+      let msg = err instanceof Error ? err.message : 'MetaMask linking failed';
+
+      if (code === 4001 || msg.toLowerCase().includes('user rejected') || msg.toLowerCase().includes('user denied')) {
+        msg = 'Action cancelled in MetaMask. Please approve the prompt in MetaMask to connect and link your wallet.';
+      }
+
       setWalletLinkError(msg);
     } finally {
       setIsLinkingMetaMask(false);
@@ -465,6 +507,7 @@ export default function AgentWalletPage() {
           dailyBudget: (parseFloat(dailyBudget) * 1000000).toString(),
           monthlyBudget: (parseFloat(monthlyBudget) * 1000000).toString(),
           autonomousPaymentsEnabled: autonomousEnabled,
+          grantDelegatedSigning: autonomousEnabled,
           allowedNetworks: ['hedera:testnet'],
           allowedAssets: ['USDC', 'HBAR'],
         }),
@@ -675,6 +718,9 @@ export default function AgentWalletPage() {
                 {hederaWallet.signerType === 'metamask_evm' && (
                   <Badge variant="info">METAMASK EVM</Badge>
                 )}
+                {(hederaWallet.mpcEnrolled || hederaWallet.smartAccountUpgraded || hederaWallet.signerType === 'metamask_evm_mpc') && (
+                  <Badge variant="active">MPC 2-of-3 Threshold Active</Badge>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -718,6 +764,21 @@ export default function AgentWalletPage() {
                     {hederaWallet.balance.hbarBalance} HBAR
                   </strong>
                 </p>
+              )}
+              {(hederaWallet.mpcEnrolled || hederaWallet.smartAccountUpgraded || hederaWallet.signerType === 'metamask_evm_mpc') ? (
+                <div className="text-[11px] font-mono text-emerald-400/90 flex flex-wrap items-center gap-2 pt-1 border-t border-[#1A2E38]/50 mt-1">
+                  <span>✓ On-Chain: KeyList([MetaMask, MPC], threshold: 1)</span>
+                  <span className="text-[#AAAAAA]">•</span>
+                  <span>MetaMask Key Preserved</span>
+                  <span className="text-[#AAAAAA]">•</span>
+                  <span>Autonomous MPC Signing Enabled</span>
+                </div>
+              ) : (
+                <div className="text-[11px] font-mono text-emerald-400/90 flex flex-wrap items-center gap-2 pt-1 border-t border-[#1A2E38]/50 mt-1">
+                  <span>⚡ Autonomous Signing Ready: Authorized via Delegated Agent Key</span>
+                  <span className="text-[#AAAAAA]">•</span>
+                  <span>MetaMask Key Preserved</span>
+                </div>
               )}
             </div>
 
@@ -1189,11 +1250,55 @@ export default function AgentWalletPage() {
                 <p>
                   Link your MetaMask EVM wallet to PaidX on Hedera Testnet.
                 </p>
+                <div className="space-y-1 text-[11px] text-[#888888]">
+                  <div>• <span className="text-[#DFE0E2]">Network:</span> Hedera Testnet (Chain ID 296 / 0x128)</div>
+                  <div>• <span className="text-[#DFE0E2]">RPC:</span> https://testnet.hashio.io/api</div>
+                  <div>• <span className="text-[#DFE0E2]">Currency:</span> HBAR (18 decimals)</div>
+                  <div>• <span className="text-[#DFE0E2]">Explorer:</span> https://hashscan.io/testnet</div>
+                  <div>• <span className="text-[#DFE0E2]">Security:</span> Server-issued, single-use cryptographic challenge</div>
+                  <div>• <span className="text-[#DFE0E2]">Resolution:</span> Automatically resolves EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
                 <div className="space-y-1 text-[11px] pt-1">
                   <div>• <strong className="text-[#111111] dark:text-white">Network:</strong> Hedera Testnet (Chain ID 296)</div>
                   <div>• <strong className="text-[#111111] dark:text-white">RPC:</strong> https://testnet.hashio.io/api</div>
                   <div>• <strong className="text-[#111111] dark:text-white">Resolution:</strong> Automatically maps EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
                 </div>
+
+                <div className="pt-2 border-t border-[#1A2E38] flex items-center justify-between">
+                  <span className="text-[11px] text-[#888888]">Hashio RPC Health:</span>
+                  <div className="flex items-center gap-2">
+                    {rpcStatus ? (
+                      rpcStatus.success ? (
+                        <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Online ({rpcStatus.latencyMs}ms, Block #{rpcStatus.blockNumber})
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-rose-400 font-mono flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Unreachable
+                        </span>
+                      )
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={handleTestRpc}
+                      disabled={isTestingRpc}
+                      className="text-[11px] text-[#5465FF] hover:underline flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {isTestingRpc ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Radio className="w-3 h-3" />
+                      )}
+                      {isTestingRpc ? 'Testing...' : 'Test Connection'}
+                    </button>
+                  </div>
+                </div>
+                {rpcStatus && !rpcStatus.success && (
+                  <div className="text-[10px] text-rose-400 bg-rose-500/10 p-2 rounded border border-rose-500/20 font-mono">
+                    RPC Error: {rpcStatus.error}
+                  </div>
+                )}
               </div>
 
               {metaMaskStatusText && (
@@ -1468,6 +1573,18 @@ export default function AgentWalletPage() {
               required
             />
 
+            <div className="p-3.5 bg-[#071013] border border-[#1A2E38] rounded-lg space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-[#DFE0E2] flex items-center gap-1.5">
+                    Autonomous Payments
+                    <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                      No MetaMask Popups
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[#AAAAAA]">
+                    Allow agent to sign and settle payments autonomously within policy limits
+                  </div>
             <div className="flex items-center justify-between p-4 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 rounded-xl">
               <div>
                 <div className="text-xs font-semibold text-[#111111] dark:text-[#F5F8FF]">
@@ -1476,6 +1593,19 @@ export default function AgentWalletPage() {
                 <div className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
                   Allow agent to pay up to daily budget without user prompt
                 </div>
+                <input
+                  type="checkbox"
+                  checked={autonomousEnabled}
+                  onChange={(e) => setAutonomousEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-[#5465FF] rounded"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1A2E38]/60 text-[11px] font-mono text-[#AAAAAA]">
+                <div>Network: <span className="text-[#DFE0E2]">hedera:testnet (296)</span></div>
+                <div>Assets: <span className="text-[#DFE0E2]">USDC, HBAR</span></div>
+                <div>Signing Mode: <span className="text-emerald-400">MPC 2-of-3 Threshold</span></div>
+                <div>Revocation: <span className="text-amber-400">Instant 1-Click</span></div>
               </div>
               <input
                 type="checkbox"

@@ -84,7 +84,7 @@ export default function ConsoleWalletPage() {
             setRelayerAddress(d.sessionAccountAddress as Address);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
     loadSession();
   }, []);
