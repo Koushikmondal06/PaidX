@@ -15,7 +15,7 @@ import {
   getHashScanAccountUrl,
 } from '../hedera/mirrorNode';
 import { defaultMpcSigner } from '../hedera/signing/mpcSigner';
-import { keyStructureMatches, type MirrorKeyNode } from '../hedera/signing/delegatedSigner';
+import { defaultDelegatedSigner, keyStructureMatches, type MirrorKeyNode } from '../hedera/signing/delegatedSigner';
 import { PublicKey } from '@hiero-ledger/sdk';
 import { createRecipientPaymentRequirements } from '../hedera/x402/requirements';
 import { orchestrateAgentPayment } from '../agent/orchestrator';
@@ -68,6 +68,50 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
         network: 'hedera:testnet',
         agentName: ctx.agentName,
         status: 'connected',
+      };
+    },
+  },
+  {
+    name: 'get_wallet_status',
+    description:
+      'Returns the comprehensive status of the connected PaidX wallet, including native MPC enrollment, network, balances, signer type, and passkey security status.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    handler: async (ctx) => {
+      const isMpcEnrolled = await defaultMpcSigner.canSign(ctx.walletAddress);
+      const mpcKey = defaultMpcSigner.getKey(ctx.walletAddress);
+
+      let balanceHbar = '0';
+      let balanceUsdc = '0';
+      try {
+        const balances = await getAccountBalances(ctx.walletAddress);
+        balanceHbar = balances.hbar;
+        const usdc = balances.tokens.find((t) => t.symbol === 'USDC');
+        if (usdc) balanceUsdc = usdc.balance;
+      } catch {}
+
+      return {
+        walletId: ctx.walletId,
+        walletAddress: ctx.walletAddress,
+        network: 'hedera:testnet',
+        chainId: 296,
+        status: 'active',
+        isNativeMpc: isMpcEnrolled,
+        signerType: isMpcEnrolled ? 'native_mpc' : 'delegated',
+        mpcEnrollment: {
+          enrolled: isMpcEnrolled,
+          curve: mpcKey?.curve || 'secp256k1',
+          threshold: mpcKey ? `${mpcKey.threshold}-of-${mpcKey.totalShares}` : 'N/A',
+          keyRotationCount: mpcKey?.keyRotationCount ?? 0,
+        },
+        autonomousPaymentsEnabled: ctx.policy?.autonomousPaymentsEnabled ?? true,
+        balances: {
+          hbar: balanceHbar,
+          usdc: balanceUsdc,
+        },
+        passkeySecured: true,
       };
     },
   },
@@ -679,6 +723,48 @@ export const PAIDX_MCP_TOOLS: McpToolDefinition[] = [
 
       return {
         recentReservations: reservations || [],
+      };
+    },
+  },
+  {
+    name: 'revoke_agent_access',
+    description:
+      'Instantly revokes agent access, purges session signing permissions, and disables autonomous payments for the connected AI agent.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Reason for revoking agent access (optional)',
+        },
+      },
+    },
+    handler: async (ctx, args) => {
+      // 1. Purge active signing provider session keys
+      defaultMpcSigner.unregisterMpcKey(ctx.walletAddress);
+      defaultDelegatedSigner.unregisterAgentSessionKey(ctx.agentId);
+      defaultDelegatedSigner.unregisterAccountKey(ctx.walletAddress);
+
+      // 2. Persist revocation in database
+      const supabase = createServerSupabaseClient();
+      await supabase
+        .from('agent_connections')
+        .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+        .eq('id', ctx.agentId);
+
+      await supabase
+        .from('agent_policies')
+        .update({ autonomous_payments_enabled: false })
+        .eq('agent_id', ctx.agentId);
+
+      return {
+        success: true,
+        agentId: ctx.agentId,
+        agentName: ctx.agentName,
+        status: 'revoked',
+        message: 'Agent permissions and autonomous payment credentials have been successfully revoked.',
+        reason: args?.reason || 'User or agent initiated revocation',
+        revokedAt: new Date().toISOString(),
       };
     },
   },

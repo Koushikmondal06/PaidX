@@ -19195,6 +19195,14 @@ var MCP_TOOL_DEFINITIONS = [
     }
   },
   {
+    name: "get_wallet_status",
+    description: "Returns the comprehensive status of the connected PaidX wallet, including native MPC enrollment, network, balances, signer type, and passkey security status.",
+    inputSchema: {
+      type: "object",
+      properties: {}
+    }
+  },
+  {
     name: "get_wallet_address",
     description: "Returns the Hedera Account ID (e.g. 0.0.123456) of the connected PaidX wallet.",
     inputSchema: {
@@ -19317,6 +19325,19 @@ var MCP_TOOL_DEFINITIONS = [
     inputSchema: {
       type: "object",
       properties: {}
+    }
+  },
+  {
+    name: "revoke_agent_access",
+    description: "Instantly revokes agent access, purges session signing permissions, and disables autonomous payments for the connected AI agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "Reason for revoking agent access (optional)"
+        }
+      }
     }
   },
   {
