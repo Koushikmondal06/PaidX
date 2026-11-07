@@ -78,28 +78,28 @@ export default function AuthCallbackPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#071013] text-[#DFE0E2] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background radial glow */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#5465FF]/10 rounded-full blur-[100px] pointer-events-none" />
+    <div className="min-h-screen bg-[#F6F7FC] dark:bg-[#050B1B] text-[#334155] dark:text-[#A9B9D5] flex flex-col items-center justify-center p-4 relative overflow-hidden font-archivo">
+      {/* Background ambient glow */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#ECEEFF] dark:bg-[#2045E8]/10 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="w-full max-w-lg space-y-6 relative z-10 text-center">
         {/* Brand header */}
         <div className="flex flex-col items-center gap-3">
           <PaidXLogo size={42} />
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1A2E38]/60 border border-[#1A2E38] text-[11px] font-mono text-[#AAAAAA]">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#065F46] font-medium">
+            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
             <span>Ethereum Sepolia Network</span>
           </div>
         </div>
 
-        <Card className="p-8 space-y-6 bg-[#0B161B]/95 border-[#1A2E38] backdrop-blur-xl shadow-2xl">
+        <Card className="p-8 space-y-6 bg-white dark:bg-[#09152D] border border-[#E2E8F0] dark:border-white/10 rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
           {/* VERIFYING STATE */}
           {status === 'verifying' && (
             <div className="flex flex-col items-center gap-4 py-8">
-              <Loader2 className="w-10 h-10 text-[#5465FF] animate-spin" />
+              <Loader2 className="w-10 h-10 text-[#2045E8] animate-spin" />
               <div className="space-y-1.5">
-                <h2 className="text-lg font-bold font-mono text-[#DFE0E2]">Verifying Your Account...</h2>
-                <p className="text-xs text-[#888888] font-mono max-w-sm mx-auto">
+                <h2 className="text-xl font-semibold text-[#111111] dark:text-white">Verifying Your Account...</h2>
+                <p className="text-sm text-[#64748B] dark:text-[#94A3B8] max-w-sm mx-auto">
                   Exchanging secure cryptographic authorization tokens with PaidX Console.
                 </p>
               </div>
@@ -109,30 +109,30 @@ export default function AuthCallbackPage() {
           {/* SUCCESS CONFIRMED STATE */}
           {status === 'success' && (
             <div className="space-y-6 py-2">
-              <div className="w-16 h-16 rounded-full bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
-                <CheckCircle2 className="w-9 h-9 text-emerald-400" />
+              <div className="w-16 h-16 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] flex items-center justify-center mx-auto shadow-sm">
+                <CheckCircle2 className="w-9 h-9 text-[#10B981]" />
               </div>
 
               <div className="space-y-2">
-                <h1 className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
+                <h1 className="text-2xl font-semibold tracking-tight text-[#111111] dark:text-white">
                   Email Verified & Account Active
                 </h1>
-                <p className="text-xs text-[#AAAAAA] font-mono leading-relaxed max-w-md mx-auto">
+                <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed max-w-md mx-auto">
                   Your identity has been authenticated. You are ready to connect your MetaMask Smart Account and link contactless NFC payment cards.
                 </p>
               </div>
 
               {/* User details summary pill */}
               {userSession && (
-                <div className="p-3.5 bg-[#071013] rounded-xl border border-[#1A2E38] text-left space-y-2">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-[#888888]">Account Identifier:</span>
-                    <span className="text-white font-medium">{userSession.identifier}</span>
+                <div className="p-4 bg-[#F8FAFC] dark:bg-white/5 rounded-xl border border-[#E2E8F0] dark:border-white/10 text-left space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#64748B] dark:text-[#94A3B8]">Account Identifier:</span>
+                    <span className="text-[#111111] dark:text-white font-medium">{userSession.identifier}</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-[#888888]">Status:</span>
-                    <span className="text-emerald-400 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Confirmed & Authorized
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#64748B] dark:text-[#94A3B8]">Status:</span>
+                    <span className="text-[#10B981] font-medium flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4" /> Confirmed & Authorized
                     </span>
                   </div>
                 </div>
@@ -145,21 +145,23 @@ export default function AuthCallbackPage() {
                   variant="primary"
                   size="lg"
                   onClick={handleProceed}
-                  className="w-full font-mono text-xs py-3 flex items-center justify-center gap-2"
+                  className="w-full text-xs font-semibold py-3 flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(32,69,232,0.25)]"
                 >
                   <span>Launch PaidX Setup & Onboarding</span>
                   <ArrowRight className="w-4 h-4" />
                 </Button>
 
-                <a
-                  href="https://paidx.cc"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-1.5 text-xs font-mono text-[#888888] hover:text-[#DFE0E2] transition-colors py-1.5"
-                >
-                  <span>Learn more at paidx.cc</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                <div>
+                  <a
+                    href="https://paidx.cc"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 text-xs text-[#64748B] hover:text-[#111111] dark:hover:text-white transition-colors py-1.5"
+                  >
+                    <span>Learn more at paidx.cc</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
               </div>
             </div>
           )}
@@ -167,13 +169,13 @@ export default function AuthCallbackPage() {
           {/* ERROR STATE */}
           {status === 'error' && (
             <div className="space-y-6 py-4">
-              <div className="w-14 h-14 rounded-full bg-red-950/60 border border-red-500/30 flex items-center justify-center mx-auto">
-                <AlertCircle className="w-8 h-8 text-red-400" />
+              <div className="w-16 h-16 rounded-full bg-[#FEF2F2] border border-[#FCA5A5] flex items-center justify-center mx-auto">
+                <AlertCircle className="w-9 h-9 text-[#EF4444]" />
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-lg font-bold font-mono text-red-300">Confirmation Issue</h2>
-                <p className="text-xs text-[#AAAAAA] font-mono max-w-sm mx-auto">
+                <h2 className="text-xl font-semibold text-[#991B1B] dark:text-red-300">Confirmation Issue</h2>
+                <p className="text-sm text-[#64748B] dark:text-[#94A3B8] max-w-sm mx-auto">
                   {errorMessage || 'The verification link may have expired or already been used.'}
                 </p>
               </div>
@@ -183,7 +185,7 @@ export default function AuthCallbackPage() {
                   type="button"
                   variant="primary"
                   onClick={() => router.push('/auth')}
-                  className="w-full font-mono text-xs py-2.5"
+                  className="w-full text-xs font-semibold py-3"
                 >
                   Return to Sign In
                 </Button>
@@ -193,7 +195,7 @@ export default function AuthCallbackPage() {
         </Card>
 
         {/* Footer info */}
-        <p className="text-[11px] font-mono text-[#666666]">
+        <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
           PaidX • Non-custodial payments on Ethereum Sepolia
         </p>
       </div>

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getRealUserSession, clearSession } from '@/lib/auth';
 import { APP_URL } from '@/lib/base';
-import { ArrowRight, AlertCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 
 export default function AuthPage() {
   const router = useRouter();
@@ -164,27 +164,28 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#071013] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background glow aesthetics */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#5465FF]/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-[#F6F7FC] dark:bg-[#050B1B] text-[#303747] dark:text-[#A9B9D5] flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-archivo">
+      {/* Background soft ambient tint matching landing page */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#ECEEFF]/80 dark:bg-[#1749F5]/10 rounded-full blur-[140px] pointer-events-none" />
 
-      <div className="w-full max-w-md space-y-6 relative z-10">
+      <div className="w-full max-w-[440px] space-y-6 relative z-10">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="flex justify-center mb-2">
-            <PaidXLogo size={36} />
+          <div className="flex justify-center mb-4">
+            <PaidXLogo size={42} showConsole={true} />
           </div>
-          <h1 className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
+          <h1 className="text-2xl sm:text-[28px] font-bold font-archivo tracking-tight text-[#090B12] dark:text-[#F5F8FF]">
             {mode === 'register' ? 'Create Your PaidX Account' : 'Sign In to PaidX Console'}
           </h1>
-          <p className="text-xs text-[#AAAAAA] font-mono">
-            Contactless Retail Payments on Ethereum Sepolia (Non-Custodial)
+          <p className="text-xs sm:text-sm font-archivo text-[#667085] dark:text-[#94A3B8]">
+            Contactless Retail Payments on Ethereum Sepolia
           </p>
         </div>
 
-        <Card className="p-6 space-y-6 bg-[#0B161B]/95 border-[#1A2E38] backdrop-blur shadow-2xl">
+        {/* Authentication Card */}
+        <div className="p-7 sm:p-9 space-y-6 bg-white dark:bg-[#09152D] border border-[#E2E8F0] dark:border-white/10 rounded-[28px] shadow-[0_16px_45px_rgba(31,45,88,0.07)]">
           {/* Mode Switcher: Login / Register */}
-          <div className="grid grid-cols-2 p-1 bg-[#071013] rounded-lg border border-[#1A2E38]">
+          <div className="grid grid-cols-2 p-1.5 bg-[#F1F5F9] dark:bg-white/5 rounded-2xl border border-[#E2E8F0] dark:border-white/10">
             <button
               type="button"
               onClick={() => {
@@ -192,10 +193,11 @@ export default function AuthPage() {
                 setError(null);
                 setInfoMessage(null);
               }}
-              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${mode === 'register'
-                  ? 'bg-[#5465FF] text-white shadow-sm'
-                  : 'text-[#888888] hover:text-[#DFE0E2]'
-                }`}
+              className={`py-2.5 text-xs sm:text-[13px] font-archivo font-medium rounded-xl transition-all ${
+                mode === 'register'
+                  ? 'bg-white dark:bg-[#1749F5] text-[#090B12] dark:text-white shadow-sm font-semibold'
+                  : 'text-[#667085] dark:text-[#94A3B8] hover:text-[#090B12] dark:hover:text-white'
+              }`}
             >
               Create Account
             </button>
@@ -206,10 +208,11 @@ export default function AuthPage() {
                 setError(null);
                 setInfoMessage(null);
               }}
-              className={`py-2 text-xs font-mono font-medium rounded-md transition-all ${mode === 'login'
-                  ? 'bg-[#5465FF] text-white shadow-sm'
-                  : 'text-[#888888] hover:text-[#DFE0E2]'
-                }`}
+              className={`py-2.5 text-xs sm:text-[13px] font-archivo font-medium rounded-xl transition-all ${
+                mode === 'login'
+                  ? 'bg-white dark:bg-[#1749F5] text-[#090B12] dark:text-white shadow-sm font-semibold'
+                  : 'text-[#667085] dark:text-[#94A3B8] hover:text-[#090B12] dark:hover:text-white'
+              }`}
             >
               Sign In
             </button>
@@ -217,32 +220,33 @@ export default function AuthPage() {
 
           {/* Feedback messages */}
           {error && (
-            <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg flex items-start gap-2.5 text-red-300 text-xs font-mono">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
-              <span>{error}</span>
+            <div className="p-3.5 bg-[#FEF2F2] dark:bg-red-950/30 border border-[#FCA5A5] dark:border-red-800/60 rounded-xl flex items-start gap-2.5 text-[#991B1B] dark:text-red-300 text-xs font-archivo">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#EF4444]" />
+              <span className="leading-relaxed">{error}</span>
             </div>
           )}
 
           {infoMessage && (
-            <div className="p-3 bg-blue-950/40 border border-blue-800/60 rounded-lg flex items-start gap-2.5 text-blue-300 text-xs font-mono">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-blue-400" />
-              <span>{infoMessage}</span>
+            <div className="p-3.5 bg-[#EFF6FF] dark:bg-blue-950/30 border border-[#BFDBFE] dark:border-blue-800/60 rounded-xl flex items-start gap-2.5 text-[#1E40AF] dark:text-blue-300 text-xs font-archivo">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#1749F5]" />
+              <span className="leading-relaxed">{infoMessage}</span>
             </div>
           )}
 
           {/* Channel selector: Email vs Phone */}
-          <div className="flex items-center gap-2 border-b border-[#1A2E38] pb-3">
-            <span className="text-xs font-mono text-[#888888]">Channel:</span>
+          <div className="flex items-center gap-2 border-b border-[#E2E8F0] dark:border-white/10 pb-3">
+            <span className="text-xs font-archivo font-medium text-[#667085] dark:text-[#94A3B8]">Channel:</span>
             <button
               type="button"
               onClick={() => {
                 setChannel('email');
                 setError(null);
               }}
-              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${channel === 'email'
-                  ? 'bg-[#1A2E38] text-[#5465FF] font-semibold'
-                  : 'text-[#666666] hover:text-[#AAAAAA]'
-                }`}
+              className={`text-xs font-archivo px-3 py-1.5 rounded-xl transition-all ${
+                channel === 'email'
+                  ? 'bg-[#ECEEFF] text-[#1749F5] dark:bg-[#1749F5]/20 dark:text-[#7C9BFF] font-semibold border border-[#DFE3F8] dark:border-[#1749F5]/30 shadow-xs'
+                  : 'text-[#667085] dark:text-[#94A3B8] hover:text-[#090B12] dark:hover:text-white hover:bg-[#F8FAFC] dark:hover:bg-white/5'
+              }`}
             >
               Email Address
             </button>
@@ -252,10 +256,11 @@ export default function AuthPage() {
                 setChannel('phone');
                 setError(null);
               }}
-              className={`text-xs font-mono px-2.5 py-1 rounded transition-colors ${channel === 'phone'
-                  ? 'bg-[#1A2E38] text-[#5465FF] font-semibold'
-                  : 'text-[#666666] hover:text-[#AAAAAA]'
-                }`}
+              className={`text-xs font-archivo px-3 py-1.5 rounded-xl transition-all ${
+                channel === 'phone'
+                  ? 'bg-[#ECEEFF] text-[#1749F5] dark:bg-[#1749F5]/20 dark:text-[#7C9BFF] font-semibold border border-[#DFE3F8] dark:border-[#1749F5]/30 shadow-xs'
+                  : 'text-[#667085] dark:text-[#94A3B8] hover:text-[#090B12] dark:hover:text-white hover:bg-[#F8FAFC] dark:hover:bg-white/5'
+              }`}
             >
               Phone Number
             </button>
@@ -311,18 +316,19 @@ export default function AuthPage() {
               type="submit"
               variant="primary"
               size="lg"
-              className="w-full font-mono text-xs"
+              className="w-full h-12 text-sm font-semibold rounded-xl bg-[#1749F5] hover:bg-[#113AC8] text-white shadow-sm hover:shadow-md hover:shadow-[#1749F5]/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-2"
               isLoading={isLoading}
             >
               <span>{mode === 'register' ? 'Create Account & Continue' : 'Sign In to Console'}</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+              <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </form>
-        </Card>
+        </div>
 
         {/* Security Tagline */}
-        <div className="text-center text-[11px] font-mono text-[#666666]">
-          Non-custodial smart accounts on Ethereum Sepolia
+        <div className="text-center text-xs font-archivo text-[#667085] dark:text-[#94A3B8] flex items-center justify-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0" />
+          <span>Non-custodial smart accounts on Ethereum Sepolia</span>
         </div>
       </div>
     </div>

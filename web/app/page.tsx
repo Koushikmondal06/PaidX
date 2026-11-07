@@ -10,6 +10,7 @@ import { StatsSection } from '@/components/StatsSection';
 import { CurrencyCoverageSection } from '@/components/CurrencyCoverageSection';
 import { FastSettlementSection } from '@/components/FastSettlementSection';
 import { FaqSection } from '@/components/FaqSection';
+import { WaitlistSection } from '@/components/WaitlistSection';
 import { Footer } from '@/components/Footer';
 
 export default function LandingPage() {
@@ -43,6 +44,9 @@ export default function LandingPage() {
 
         {/* Comprehensive FAQ Accordion */}
         <FaqSection />
+
+        {/* PaidX Beta Waitlist Reservation */}
+        <WaitlistSection />
       </main>
 
       {/* Comprehensive Footer with Support Banner */}

@@ -20,8 +20,8 @@ export function QrCodeDisplay({
       width: size,
       margin: 1,
       color: {
-        dark: '#DFE0E2',
-        light: '#071013',
+        dark: '#111111',
+        light: '#FFFFFF',
       },
     })
       .then((url) => setDataUrl(url))
@@ -32,7 +32,7 @@ export function QrCodeDisplay({
     return (
       <div
         style={{ width: size, height: size }}
-        className="bg-[#071013] border border-[#1A2E38] rounded-lg animate-pulse mx-auto flex items-center justify-center text-[10px] font-mono text-[#666666]"
+        className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl animate-pulse mx-auto flex items-center justify-center text-xs font-archivo text-[#64748B]"
       >
         Generating QR...
       </div>
@@ -41,14 +41,15 @@ export function QrCodeDisplay({
 
   return (
     <div
-      className={`p-3 bg-[#071013] border border-[#1A2E38] rounded-xl inline-block shadow-inner shadow-black/60 ${className}`}
+      className={`p-3 bg-white border border-[#E2E8F0] rounded-2xl inline-block shadow-sm ${className}`}
     >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={dataUrl}
         alt="Payment QR Code"
         width={size}
         height={size}
-        className="rounded-md mx-auto"
+        className="rounded-xl mx-auto"
       />
     </div>
   );

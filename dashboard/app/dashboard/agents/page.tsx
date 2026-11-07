@@ -30,6 +30,8 @@ import {
   Sparkles,
   Wallet,
   RefreshCw,
+  ChevronRight,
+  Cpu,
 } from 'lucide-react';
 import { HEDERA_TESTNET_CHAIN_PARAMS } from '@/lib/hedera/chain';
 import { getPublicMcpServerUrl, buildMcpClientConfig } from '@/lib/config/mcp';
@@ -157,7 +159,6 @@ export default function AgentWalletPage() {
 
   const handleCloseConnectModal = () => {
     setShowConnectModal(false);
-    // Securely wipe raw agent token from frontend state so it cannot be viewed again
     setCreatedToken(null);
     setMcpTestResult(null);
     setCopiedConfig(false);
@@ -318,8 +319,8 @@ export default function AgentWalletPage() {
         }
       }
 
-      // 3. Request server-issued, single-use, expiring challenge
-      setMetaMaskStatusText('Requesting single-use challenge from PaidX server...');
+      // 3. Request server-issued challenge
+      setMetaMaskStatusText('Requesting single-use verification challenge...');
       const supabase = createBrowserSupabaseClient();
       const { data: authSession } = await supabase.auth.getSession();
       const token = authSession?.session?.access_token;
@@ -344,7 +345,7 @@ export default function AgentWalletPage() {
         throw new Error(chalData.error || 'Failed to issue verification challenge.');
       }
 
-      // 4. Request personal_sign signature from MetaMask
+      // 4. Request personal_sign signature
       setMetaMaskStatusText('Please sign the verification message in MetaMask...');
       const signature: string = await ethereum.request({
         method: 'personal_sign',
@@ -352,7 +353,7 @@ export default function AgentWalletPage() {
       });
 
       // 5. Submit signed challenge to server for verification & Mirror Node lookup
-      setMetaMaskStatusText('Verifying signature & resolving Hedera account on Mirror Node...');
+      setMetaMaskStatusText('Resolving Hedera account on Mirror Node...');
       const linkRes = await fetch('/api/wallets/hedera', {
         method: 'POST',
         headers,
@@ -570,135 +571,159 @@ export default function AgentWalletPage() {
   };
 
   const activeAgents = agents.filter((a) => a.status === 'active');
-  const displayWalletAddress = hederaWallet?.address || 'No Hedera Wallet Linked';
+  const displayWalletAddress = hederaWallet?.address || 'No Hedera Wallet';
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 sm:space-y-10">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#1A2E38]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#E2E8F0] dark:border-white/10">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-[#DFE0E2] tracking-tight">AI Agent Wallet</h1>
-            <Badge variant="active">Hedera x402</Badge>
+          <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+            <h1 className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF]">
+              AI Agent Wallet
+            </h1>
+            <Badge variant="active" dot>Hedera x402</Badge>
             <Badge variant="info">HTS + HCS Native</Badge>
-            <Badge variant="info">16 MCP Tools</Badge>
+            <Badge variant="default">16 MCP Tools</Badge>
           </div>
-          <p className="text-sm text-[#AAAAAA] mt-1 font-mono">
-            Connect AI agents to your PaidX Hedera wallet for conversational payments on Hedera Testnet.
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] font-archivo">
+            Delegate conversational payments to autonomous AI agents via official Model Context Protocol (MCP) tools.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
           <Button
             variant="outline"
+            size="sm"
             onClick={() => {
               setWalletLinkError(null);
               setWalletLinkSuccess(null);
               setActiveLinkTab('metamask');
               setShowLinkWalletModal(true);
             }}
+            className="text-xs font-archivo"
           >
-            <Wallet className="w-4 h-4 mr-1.5" />
-            {hederaWallet ? 'Manage Hedera Wallet' : 'Link MetaMask to Hedera'}
+            <Wallet className="w-3.5 h-3.5 mr-1.5 text-[#1749F5] dark:text-[#5B8EFF]" />
+            <span>{hederaWallet ? 'Manage Hedera Wallet' : 'Link MetaMask to Hedera'}</span>
           </Button>
 
           <Button
             variant="primary"
+            size="sm"
             onClick={() => {
               setCreatedToken(null);
               setAgentConnectError(null);
               setShowConnectModal(true);
             }}
+            className="text-xs font-archivo"
           >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Connect AI Agent
+            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            <span>Connect AI Agent</span>
           </Button>
         </div>
       </div>
 
-      {/* Overview Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Overview Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Connected Agents"
           value={activeAgents.length.toString()}
           subtitle="Active with spending budgets"
-          icon={<Bot className="w-4 h-4" />}
+          icon={<Bot className="w-5 h-5" />}
         />
         <StatCard
-          title="Authorized Hedera Account"
+          title="Hedera Account"
           value={displayWalletAddress}
-          subtitle={hederaWallet ? 'Hedera Testnet (Chain ID 296)' : 'Action Required: Link Wallet'}
-          icon={hederaWallet ? <ShieldCheck className="w-4 h-4 text-emerald-400" /> : <ShieldAlert className="w-4 h-4 text-amber-400" />}
+          subtitle={hederaWallet ? 'Hedera Testnet (Chain ID 296)' : 'Link wallet to activate'}
+          icon={
+            hederaWallet ? (
+              <ShieldCheck className="w-5 h-5 text-[#10B981]" />
+            ) : (
+              <ShieldAlert className="w-5 h-5 text-[#F59E0B]" />
+            )
+          }
         />
         <StatCard
           title="Daily Spending Cap"
           value="$20.00 USDC"
           subtitle="Autonomous Policy Enforced"
-          icon={<Sliders className="w-4 h-4" />}
+          icon={<Sliders className="w-5 h-5" />}
         />
         <StatCard
-          title="Hedera Facilitator"
+          title="Gas Facilitator"
           value="Active (x402)"
-          subtitle="Sponsoring Gas Fees"
-          icon={<Zap className="w-4 h-4" />}
+          subtitle="Sponsored transaction fees"
+          icon={<Zap className="w-5 h-5" />}
         />
       </div>
 
-      {/* Connected Hedera Wallet Banner Section */}
+      {/* Connected Hedera Wallet Banner Section: Split Panel & Inner Card Motif */}
       {walletLoading ? (
-        <Card className="p-4 border border-[#1A2E38] bg-[#071013] text-xs text-[#AAAAAA] font-mono flex items-center gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin text-[#5465FF]" />
-          Verifying linked Hedera account on Mirror Node...
-        </Card>
+        <div className="p-6 rounded-[24px] bg-white dark:bg-[#09152D] border border-[#E2E8F0] dark:border-white/10 flex items-center justify-center gap-2 text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] shadow-sm">
+          <RefreshCw className="w-4 h-4 animate-spin text-[#1749F5] dark:text-[#5B8EFF]" />
+          <span>Verifying linked Hedera account on Mirror Node...</span>
+        </div>
       ) : hederaWallet ? (
-        <Card className="p-5 border border-emerald-500/30 bg-[#071013] relative overflow-hidden">
+        <div className="bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 rounded-[28px] p-6 sm:p-8 space-y-4 transition-colors shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono uppercase tracking-wider text-[#AAAAAA]">Connected Hedera Wallet</span>
-                <Badge variant="active">Verified on Mirror Node</Badge>
-                <Badge variant="info">Testnet (296)</Badge>
+                <span className="text-xs font-archivo font-semibold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">
+                  Authorized Hedera Settlement Account
+                </span>
+                <Badge variant="active">VERIFIED ON MIRROR NODE</Badge>
                 {hederaWallet.signerType === 'metamask_evm' && (
-                  <Badge variant="info">MetaMask EVM</Badge>
+                  <Badge variant="info">METAMASK EVM</Badge>
                 )}
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xl font-bold font-mono text-[#00F5D4]">{hederaWallet.address}</span>
+
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <span className="text-2xl font-semibold font-mono tracking-tight text-[#111111] dark:text-[#F5F8FF]">
+                  {hederaWallet.address}
+                </span>
+
                 {hederaWallet.evmAddress && (
-                  <span className="text-xs font-mono text-[#AAAAAA] bg-[#1A2E38]/60 px-2 py-0.5 rounded border border-[#1A2E38]">
+                  <span className="text-xs font-mono text-[#334155] dark:text-[#A9B9D5] bg-white dark:bg-white/10 px-2.5 py-1 rounded-lg border border-[#DFE3F8] dark:border-white/10">
                     EVM: {hederaWallet.evmAddress.slice(0, 6)}...{hederaWallet.evmAddress.slice(-4)}
                   </span>
                 )}
+
                 <button
                   type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(hederaWallet.address);
                     alert('Hedera Account ID copied to clipboard!');
                   }}
-                  className="text-[#AAAAAA] hover:text-[#DFE0E2] transition-colors"
+                  className="p-1.5 rounded-lg text-[#64748B] hover:text-[#1749F5] hover:bg-white dark:hover:bg-white/10 transition-colors"
                   title="Copy Account ID"
                 >
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-4 h-4" />
                 </button>
+
                 <a
                   href={hederaWallet.hashScanUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-[#5465FF] hover:underline flex items-center gap-1 font-mono"
+                  className="text-xs font-archivo font-medium text-[#1749F5] dark:text-[#5B8EFF] hover:underline inline-flex items-center gap-1"
                 >
-                  View on HashScan <ExternalLink className="w-3 h-3" />
+                  <span>View on HashScan</span>
+                  <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
+
               {hederaWallet.balance && (
-                <div className="text-xs font-mono text-[#AAAAAA]">
-                  On-Chain Balance: <span className="text-[#DFE0E2] font-semibold">{hederaWallet.balance.hbarBalance} HBAR</span>
-                </div>
+                <p className="text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] pt-1">
+                  On-Chain Balance:{' '}
+                  <strong className="text-[#111111] dark:text-white font-semibold">
+                    {hederaWallet.balance.hbarBalance} HBAR
+                  </strong>
+                </p>
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={() => {
                   setWalletLinkError(null);
@@ -706,121 +731,144 @@ export default function AgentWalletPage() {
                   setActiveLinkTab('metamask');
                   setShowLinkWalletModal(true);
                 }}
+                className="text-xs"
               >
-                Change Wallet
+                Switch Account
               </Button>
             </div>
           </div>
-        </Card>
+        </div>
       ) : (
-        <Card className="p-5 border border-amber-500/40 bg-amber-500/5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-semibold text-[#DFE0E2]">No Hedera Wallet Linked</h3>
-                <p className="text-xs text-[#AAAAAA] mt-1">
-                  You must link an authorized Hedera Testnet account (via MetaMask or Account ID) before creating AI agents or executing conversational x402 payments.
-                </p>
-              </div>
+        <div className="bg-[#FFFBEB] dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-[28px] p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-colors shadow-sm">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setWalletLinkError(null);
-                  setWalletLinkSuccess(null);
-                  setActiveLinkTab('metamask');
-                  setShowLinkWalletModal(true);
-                }}
-              >
-                <Wallet className="w-4 h-4 mr-1.5" />
-                Link MetaMask to Hedera
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setWalletLinkError(null);
-                  setWalletLinkSuccess(null);
-                  setActiveLinkTab('manual');
-                  setShowLinkWalletModal(true);
-                }}
-              >
-                Manual ID
-              </Button>
+            <div>
+              <h3 className="text-base font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                No Hedera Account Linked
+              </h3>
+              <p className="text-xs sm:text-sm font-archivo text-[#64748B] dark:text-[#94A3B8] mt-1 max-w-xl">
+                Link an authorized Hedera Testnet account (via MetaMask EVM or manual Account ID) to enable conversational MCP payments and autonomous policy enforcement.
+              </p>
             </div>
           </div>
-        </Card>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                setWalletLinkError(null);
+                setWalletLinkSuccess(null);
+                setActiveLinkTab('metamask');
+                setShowLinkWalletModal(true);
+              }}
+            >
+              <Wallet className="w-4 h-4 mr-1.5" />
+              <span>Link MetaMask to Hedera</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => {
+                setWalletLinkError(null);
+                setWalletLinkSuccess(null);
+                setActiveLinkTab('manual');
+                setShowLinkWalletModal(true);
+              }}
+            >
+              Manual ID
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Conversational Payment Console */}
-      <Card className="p-6 border border-[#5465FF]/30 bg-[#071013]">
-        <div className="flex items-center justify-between pb-4 border-b border-[#1A2E38]">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-[#00F5D4]" />
-            <h2 className="text-base font-semibold text-[#DFE0E2]">Conversational Payment Tester</h2>
+      <Card className="p-6 sm:p-8 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#E2E8F0] dark:border-white/10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#ECEEFF] dark:bg-white/10 text-[#1749F5] dark:text-[#5B8EFF] flex items-center justify-center">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                Conversational Payment Tester
+              </h2>
+              <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                Natural Language Prompt &rarr; Autonomous Hedera x402 Settlement
+              </p>
+            </div>
           </div>
-          <span className="text-xs font-mono text-[#AAAAAA]">
-            Natural Language $\rightarrow$ Hedera x402
+          <span className="text-xs font-archivo font-medium text-[#1749F5] dark:text-[#5B8EFF] bg-[#ECEEFF] dark:bg-blue-950/40 px-2.5 py-1 rounded-full border border-[#DFE3F8] dark:border-blue-800/40 self-start sm:self-auto">
+            Interactive Agent Loop
           </span>
         </div>
 
         {/* Chat History Window */}
-        <div className="mt-4 space-y-3 min-h-[200px] max-h-[320px] overflow-y-auto pr-2 font-mono text-xs">
+        <div className="bg-[#F8FAFC] dark:bg-white/[0.02] border border-[#E2E8F0] dark:border-white/10 rounded-2xl p-4 sm:p-5 space-y-4 min-h-[220px] max-h-[360px] overflow-y-auto">
           {chatLog.map((msg, idx) => (
             <div
               key={idx}
-              className={`p-3 rounded-lg flex flex-col gap-1.5 ${
-                msg.sender === 'user'
-                  ? 'bg-[#0E1D24] text-[#00F5D4] border border-[#00F5D4]/20 ml-8'
-                  : 'bg-[#101F28] text-[#DFE0E2] border border-[#1A2E38] mr-8'
+              className={`flex flex-col gap-1.5 max-w-[85%] ${
+                msg.sender === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
               }`}
             >
-              <div className="flex items-center gap-1.5 text-[10px] text-[#AAAAAA]">
+              <div className="flex items-center gap-1.5 text-[11px] font-archivo font-semibold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">
                 {msg.sender === 'user' ? (
-                  <>
-                    <span className="font-bold text-[#00F5D4]">USER</span>
-                  </>
+                  <span className="text-[#1749F5] dark:text-[#5B8EFF]">You</span>
                 ) : (
                   <>
-                    <Bot className="w-3 h-3 text-[#5465FF]" />
-                    <span className="font-bold text-[#5465FF]">PAIDX AGENT</span>
+                    <Bot className="w-3.5 h-3.5 text-[#1749F5] dark:text-[#5B8EFF]" />
+                    <span>PaidX Agent</span>
                   </>
                 )}
               </div>
-              <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
 
-              {msg.details?.hashScanUrl && (
-                <div className="mt-2 pt-2 border-t border-[#1A2E38] flex items-center gap-4">
-                  <a
-                    href={msg.details.hashScanUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[#00F5D4] hover:underline"
-                  >
-                    View on HashScan <ExternalLink className="w-3 h-3" />
-                  </a>
-                  {msg.details.hcsTopicId && (
-                    <span className="text-[10px] text-[#AAAAAA]">
-                      HCS Topic: {msg.details.hcsTopicId} (Seq #{msg.details.hcsSequenceNumber})
-                    </span>
-                  )}
-                </div>
-              )}
+              <div
+                className={`p-3.5 rounded-2xl text-xs sm:text-sm font-archivo leading-relaxed shadow-sm ${
+                  msg.sender === 'user'
+                    ? 'bg-[#1749F5] text-white rounded-tr-none'
+                    : 'bg-white dark:bg-[#09152D] text-[#111111] dark:text-[#F5F8FF] border border-[#E2E8F0] dark:border-white/10 rounded-tl-none'
+                }`}
+              >
+                <div className="whitespace-pre-wrap">{msg.text}</div>
+
+                {msg.details?.hashScanUrl && (
+                  <div className="mt-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10 flex flex-wrap items-center gap-3 text-xs">
+                    <a
+                      href={msg.details.hashScanUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[#1749F5] dark:text-[#5B8EFF] font-medium hover:underline"
+                    >
+                      <span>Receipt on HashScan</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    {msg.details.hcsTopicId && (
+                      <span className="text-[11px] font-mono text-[#64748B] dark:text-[#94A3B8]">
+                        HCS Topic: {msg.details.hcsTopicId} (Seq #{msg.details.hcsSequenceNumber})
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
+
           {isChatSending && (
-            <div className="p-3 bg-[#101F28] rounded-lg text-xs text-[#AAAAAA] animate-pulse flex items-center gap-2">
-              <Bot className="w-3.5 h-3.5 text-[#5465FF] animate-spin" />
-              Agent verifying wallet balance and executing Hedera x402 payment...
+            <div className="p-3.5 bg-white dark:bg-[#09152D] border border-[#E2E8F0] dark:border-white/10 rounded-2xl text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] animate-pulse flex items-center gap-2 max-w-sm shadow-sm">
+              <Bot className="w-4 h-4 text-[#1749F5] dark:text-[#5B8EFF] animate-spin" />
+              <span>Agent verifying wallet balance and executing Hedera x402 payment...</span>
             </div>
           )}
         </div>
 
         {/* Quick Example Pills */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="text-[11px] text-[#AAAAAA] py-1 font-mono">Quick Test:</span>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <span className="text-xs font-archivo font-medium text-[#64748B] dark:text-[#94A3B8]">
+            Quick Examples:
+          </span>
           {[
             'Send 5 USDC to 0.0.123456',
             'Send 2 HBAR to 0.0.987654',
@@ -830,7 +878,7 @@ export default function AgentWalletPage() {
               key={i}
               type="button"
               onClick={() => handleSendChat(sample)}
-              className="text-[11px] font-mono px-2.5 py-1 bg-[#0E1D24] text-[#DFE0E2] border border-[#1A2E38] hover:border-[#5465FF] rounded-md transition-colors"
+              className="text-xs font-archivo px-3 py-1.5 bg-[#F8FAFC] dark:bg-white/5 text-[#334155] dark:text-[#F5F8FF] border border-[#E2E8F0] dark:border-white/10 hover:border-[#1749F5] hover:text-[#1749F5] rounded-xl transition-all"
             >
               {sample}
             </button>
@@ -838,39 +886,58 @@ export default function AgentWalletPage() {
         </div>
 
         {/* Input Bar */}
-        <div className="mt-3 flex gap-2">
+        <div className="flex gap-2.5 pt-1">
           <input
             type="text"
             value={chatPrompt}
             onChange={(e) => setChatPrompt(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
             placeholder='Type payment instruction (e.g. "Send 5 USDC to 0.0.123456")...'
-            className="flex-1 bg-[#0E1D24] border border-[#1A2E38] rounded-lg px-3 py-2 text-xs font-mono text-[#DFE0E2] focus:outline-none focus:border-[#5465FF]"
+            className="flex-1 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/15 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-archivo text-[#111111] dark:text-white placeholder:text-[#94A3B8] focus:outline-none focus:border-[#1749F5] focus:ring-1 focus:ring-[#1749F5] transition-colors"
           />
           <Button
             variant="primary"
             disabled={isChatSending || !chatPrompt.trim()}
             onClick={() => handleSendChat()}
+            className="text-xs font-archivo px-5"
           >
-            <Send className="w-3.5 h-3.5 mr-1" />
-            Send
+            <Send className="w-3.5 h-3.5 mr-1.5" />
+            <span>Send</span>
           </Button>
         </div>
       </Card>
 
-      {/* Connected Agents Table */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between pb-4 border-b border-[#1A2E38]">
-          <h2 className="text-base font-semibold text-[#DFE0E2]">Authorized AI Agents</h2>
-          <span className="text-xs text-[#AAAAAA] font-mono">{activeAgents.length} active</span>
+      {/* Authorized AI Agents Grid / Table */}
+      <Card className="space-y-4">
+        <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0] dark:border-white/10">
+          <div>
+            <h2 className="text-base sm:text-lg font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF]">
+              Authorized AI Agents
+            </h2>
+            <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+              Autonomous policy allowances and MCP credentials
+            </p>
+          </div>
+          <Badge variant="info">
+            {activeAgents.length} ACTIVE
+          </Badge>
         </div>
 
         {loading ? (
-          <div className="py-8 text-center text-xs text-[#AAAAAA]">Loading connected agents...</div>
+          <div className="py-12 text-center text-xs font-archivo text-[#64748B] dark:text-[#94A3B8]">
+            Loading connected agents...
+          </div>
         ) : agents.length === 0 ? (
           <div className="py-12 text-center space-y-3">
-            <Bot className="w-8 h-8 text-[#5465FF]/50 mx-auto" />
-            <p className="text-sm text-[#AAAAAA] font-mono">No AI agents connected yet.</p>
+            <div className="w-12 h-12 rounded-2xl bg-[#ECEEFF] dark:bg-white/5 text-[#1749F5] dark:text-[#5B8EFF] flex items-center justify-center mx-auto">
+              <Bot className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-archivo font-medium text-[#111111] dark:text-[#F5F8FF]">
+              No AI agents connected yet
+            </p>
+            <p className="text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] max-w-sm mx-auto">
+              Issue your first MCP token to authorize Claude Desktop, Cursor, or autonomous scripts.
+            </p>
             <Button
               variant="outline"
               size="sm"
@@ -879,12 +946,13 @@ export default function AgentWalletPage() {
                 setAgentConnectError(null);
                 setShowConnectModal(true);
               }}
+              className="mt-2 text-xs"
             >
               Connect Your First Agent
             </Button>
           </div>
         ) : (
-          <div className="mt-4 divide-y divide-[#1A2E38]">
+          <div className="divide-y divide-[#E2E8F0] dark:divide-white/5">
             {agents.map((agent) => {
               const policy = agent.agent_policies?.[0];
               const dailyBudgetNum = policy?.daily_budget
@@ -896,42 +964,62 @@ export default function AgentWalletPage() {
               const maxPerTxNum = policy?.max_amount_per_tx
                 ? (Number(policy.max_amount_per_tx) / 1000000).toFixed(2)
                 : '5.00';
+              const percentDaily =
+                parseFloat(dailyBudgetNum) > 0
+                  ? Math.min(100, Math.round((parseFloat(spentTodayNum) / parseFloat(dailyBudgetNum)) * 100))
+                  : 0;
 
               return (
-                <div key={agent.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div
+                  key={agent.id}
+                  className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs sm:text-sm font-archivo hover:bg-[#F8FAFC] dark:hover:bg-white/[0.02] p-2 rounded-xl transition-colors"
+                >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[#DFE0E2]">{agent.agent_name}</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-semibold text-base text-[#111111] dark:text-[#F5F8FF]">
+                        {agent.agent_name}
+                      </span>
                       <Badge variant={agent.status === 'active' ? 'active' : 'revoked'}>
-                        {agent.status}
+                        {agent.status.toUpperCase()}
                       </Badge>
                       {policy?.autonomous_payments_enabled && (
-                        <Badge variant="info">Autonomous</Badge>
+                        <Badge variant="info">AUTONOMOUS</Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 text-xs font-mono text-[#AAAAAA]">
+                    <div className="flex items-center gap-3 text-xs font-mono text-[#64748B] dark:text-[#94A3B8]">
                       <span>Key: {agent.api_key_prefix}</span>
                       <span>•</span>
                       <span>Wallet: {agent.wallets?.address || displayWalletAddress}</span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-6 text-xs font-mono">
-                    <div>
-                      <div className="text-[#AAAAAA]">Daily Spend</div>
-                      <div className="text-[#DFE0E2] font-semibold">
-                        ${spentTodayNum} / ${dailyBudgetNum} USDC
+                  <div className="flex flex-wrap items-center gap-6 text-xs font-archivo">
+                    <div className="space-y-1 min-w-[130px]">
+                      <div className="flex justify-between text-[#64748B] dark:text-[#94A3B8]">
+                        <span>Daily Spend:</span>
+                        <span className="font-semibold text-[#111111] dark:text-white">
+                          ${spentTodayNum} / ${dailyBudgetNum}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-[#E2E8F0] dark:bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#1749F5] rounded-full transition-all"
+                          style={{ width: `${percentDaily}%` }}
+                        />
                       </div>
                     </div>
+
                     <div>
-                      <div className="text-[#AAAAAA]">Max Per Tx</div>
-                      <div className="text-[#DFE0E2] font-semibold">${maxPerTxNum} USDC</div>
+                      <span className="text-[#64748B] dark:text-[#94A3B8] block">Max Per Tx:</span>
+                      <span className="font-semibold text-[#111111] dark:text-white">${maxPerTxNum} USDC</span>
                     </div>
+
                     {agent.status === 'active' && (
                       <Button
                         variant="danger"
                         size="sm"
                         onClick={() => handleRevokeAgent(agent.id)}
+                        className="text-xs"
                       >
                         <Trash2 className="w-3.5 h-3.5 mr-1" />
                         Revoke
@@ -945,65 +1033,85 @@ export default function AgentWalletPage() {
         )}
       </Card>
 
-      {/* Historical Payments Ledger */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between pb-4 border-b border-[#1A2E38]">
-          <h2 className="text-base font-semibold text-[#DFE0E2]">Hedera x402 Settlement Ledger</h2>
-          <span className="text-xs text-[#AAAAAA] font-mono">{payments.length} transactions</span>
+      {/* Historical Payments Ledger: Table format following Section 5.5 */}
+      <div className="bg-white dark:bg-[#09152D] rounded-[24px] border border-[#E2E8F0] dark:border-white/10 overflow-hidden shadow-sm">
+        <div className="p-6 pb-4 border-b border-[#E2E8F0] dark:border-white/10 flex items-center justify-between">
+          <div>
+            <h2 className="text-base sm:text-lg font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF]">
+              Hedera x402 Settlement Ledger
+            </h2>
+            <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+              Cryptographic transaction logs anchored on Hedera Consensus Service (HCS)
+            </p>
+          </div>
+          <span className="text-xs font-archivo text-[#64748B] dark:text-[#94A3B8]">
+            {payments.length} transactions recorded
+          </span>
         </div>
 
         {payments.length === 0 ? (
-          <div className="py-8 text-center text-xs text-[#AAAAAA] font-mono">
-            No payments settled yet. Use the conversational tester above to execute your first payment!
+          <div className="p-12 text-center text-xs sm:text-sm font-archivo text-[#64748B] dark:text-[#94A3B8]">
+            No payments settled yet. Use the conversational tester above to execute your first payment.
           </div>
         ) : (
-          <div className="overflow-x-auto mt-4">
-            <table className="w-full text-left text-xs font-mono">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs sm:text-sm font-archivo">
               <thead>
-                <tr className="border-b border-[#1A2E38] text-[#AAAAAA]">
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Recipient</th>
-                  <th className="pb-3 font-medium">Amount</th>
-                  <th className="pb-3 font-medium">Network</th>
-                  <th className="pb-3 font-medium">Hedera Tx ID</th>
-                  <th className="pb-3 font-medium">HCS Reference</th>
-                  <th className="pb-3 font-medium">Timestamp</th>
+                <tr className="bg-[#F8FAFC] dark:bg-white/[0.02] border-b border-[#E2E8F0] dark:border-white/10 text-[12px] font-semibold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">
+                  <th className="py-3.5 px-6">Status</th>
+                  <th className="py-3.5 px-6">Recipient</th>
+                  <th className="py-3.5 px-6">Amount</th>
+                  <th className="py-3.5 px-6">Network</th>
+                  <th className="py-3.5 px-6">Hedera Tx ID</th>
+                  <th className="py-3.5 px-6">HCS Audit</th>
+                  <th className="py-3.5 px-6 text-right">Timestamp</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#1A2E38]">
+              <tbody className="divide-y divide-[#E2E8F0]/70 dark:divide-white/5">
                 {payments.map((p) => (
-                  <tr key={p.id} className="text-[#DFE0E2]">
-                    <td className="py-3">
+                  <tr
+                    key={p.id}
+                    className="hover:bg-[#F8FAFC]/80 dark:hover:bg-white/[0.02] transition-colors text-[#334155] dark:text-[#A9B9D5]"
+                  >
+                    <td className="py-4 px-6">
                       <Badge variant={p.status === 'confirmed' ? 'active' : 'warning'}>
-                        {p.status}
+                        {p.status.toUpperCase()}
                       </Badge>
                     </td>
-                    <td className="py-3 text-[#00F5D4]">{p.recipient}</td>
-                    <td className="py-3 font-semibold">{p.amount_display}</td>
-                    <td className="py-3 text-[#AAAAAA]">{p.network}</td>
-                    <td className="py-3">
+                    <td className="py-4 px-6 font-mono text-xs text-[#111111] dark:text-[#F5F8FF]">
+                      {p.recipient}
+                    </td>
+                    <td className="py-4 px-6 font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                      {p.amount_display}
+                    </td>
+                    <td className="py-4 px-6 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                      {p.network}
+                    </td>
+                    <td className="py-4 px-6">
                       {p.tx_id ? (
                         <a
                           href={p.hashscan_url || `https://hashscan.io/testnet/transaction/${p.tx_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[#5465FF] hover:underline flex items-center gap-1"
+                          className="text-[#1749F5] dark:text-[#5B8EFF] hover:underline inline-flex items-center gap-1 font-mono text-xs"
                         >
-                          {p.tx_id.slice(0, 16)}...
+                          <span>{p.tx_id.slice(0, 16)}...</span>
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       ) : (
-                        <span className="text-[#AAAAAA]">—</span>
+                        <span className="text-[#94A3B8]">—</span>
                       )}
                     </td>
-                    <td className="py-3 text-[#AAAAAA]">
+                    <td className="py-4 px-6">
                       {p.hcs_sequence_number ? (
-                        <span className="text-emerald-400">Seq #{p.hcs_sequence_number}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#ECFDF5] text-[#10B981] dark:bg-emerald-950/40 dark:text-emerald-300">
+                          Seq #{p.hcs_sequence_number}
+                        </span>
                       ) : (
-                        '—'
+                        <span className="text-[#94A3B8]">—</span>
                       )}
                     </td>
-                    <td className="py-3 text-[#AAAAAA]">
+                    <td className="py-4 px-6 text-right text-xs text-[#64748B] dark:text-[#94A3B8]">
                       {new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                   </tr>
@@ -1012,7 +1120,7 @@ export default function AgentWalletPage() {
             </table>
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Link / Register Hedera Wallet Modal */}
       <Modal
@@ -1020,9 +1128,9 @@ export default function AgentWalletPage() {
         onClose={() => setShowLinkWalletModal(false)}
         title={hederaWallet ? 'Manage Connected Hedera Wallet' : 'Link Hedera Testnet Wallet'}
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           {/* Tab Selector */}
-          <div className="flex items-center gap-2 border-b border-[#1A2E38] pb-3">
+          <div className="grid grid-cols-2 p-1.5 bg-[#F1F5F9] dark:bg-white/5 rounded-xl border border-[#E2E8F0] dark:border-white/10">
             <button
               type="button"
               onClick={() => {
@@ -1030,14 +1138,14 @@ export default function AgentWalletPage() {
                 setWalletLinkError(null);
                 setWalletLinkSuccess(null);
               }}
-              className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5 ${
+              className={`py-2 text-xs font-archivo font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                 activeLinkTab === 'metamask'
-                  ? 'bg-[#5465FF] text-white font-semibold'
-                  : 'text-[#AAAAAA] hover:text-[#DFE0E2] hover:bg-[#1A2E38]/50'
+                  ? 'bg-white dark:bg-[#09152D] text-[#1749F5] dark:text-[#5B8EFF] shadow-sm font-semibold'
+                  : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#111111] dark:hover:text-white'
               }`}
             >
               <Wallet className="w-3.5 h-3.5" />
-              MetaMask (EVM Linking)
+              <span>MetaMask (EVM Linking)</span>
             </button>
             <button
               type="button"
@@ -1046,26 +1154,26 @@ export default function AgentWalletPage() {
                 setWalletLinkError(null);
                 setWalletLinkSuccess(null);
               }}
-              className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5 ${
+              className={`py-2 text-xs font-archivo font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                 activeLinkTab === 'manual'
-                  ? 'bg-[#5465FF] text-white font-semibold'
-                  : 'text-[#AAAAAA] hover:text-[#DFE0E2] hover:bg-[#1A2E38]/50'
+                  ? 'bg-white dark:bg-[#09152D] text-[#1749F5] dark:text-[#5B8EFF] shadow-sm font-semibold'
+                  : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#111111] dark:hover:text-white'
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
-              Manual Account ID
+              <span>Manual Account ID</span>
             </button>
           </div>
 
           {walletLinkError && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs font-mono flex items-center gap-2">
+            <div className="p-3.5 bg-[#FEF2F2] border border-red-200 dark:border-red-800/40 rounded-xl text-[#EF4444] text-xs font-archivo flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{walletLinkError}</span>
             </div>
           )}
 
           {walletLinkSuccess && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-mono flex items-center gap-2">
+            <div className="p-3.5 bg-[#ECFDF5] border border-emerald-200 dark:border-emerald-800/40 rounded-xl text-[#10B981] text-xs font-archivo flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{walletLinkSuccess}</span>
             </div>
@@ -1073,30 +1181,29 @@ export default function AgentWalletPage() {
 
           {activeLinkTab === 'metamask' ? (
             <div className="space-y-4">
-              <div className="p-4 bg-[#071013] border border-[#1A2E38] rounded-lg text-xs font-mono text-[#AAAAAA] space-y-2">
-                <div className="font-semibold text-[#DFE0E2] flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-[#00F5D4]" />
-                  MetaMask Hedera Testnet Integration
+              <div className="p-4 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 rounded-2xl text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] space-y-2">
+                <div className="font-semibold text-[#111111] dark:text-[#F5F8FF] flex items-center gap-1.5 text-sm">
+                  <ShieldCheck className="w-4 h-4 text-[#10B981]" />
+                  MetaMask Hedera Integration
                 </div>
                 <p>
                   Link your MetaMask EVM wallet to PaidX on Hedera Testnet.
                 </p>
-                <div className="space-y-1 text-[11px] text-[#888888]">
-                  <div>• <span className="text-[#DFE0E2]">Network:</span> Hedera Testnet (Chain ID 296)</div>
-                  <div>• <span className="text-[#DFE0E2]">RPC:</span> https://testnet.hashio.io/api</div>
-                  <div>• <span className="text-[#DFE0E2]">Security:</span> Server-issued, single-use cryptographic challenge</div>
-                  <div>• <span className="text-[#DFE0E2]">Resolution:</span> Automatically resolves EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
+                <div className="space-y-1 text-[11px] pt-1">
+                  <div>• <strong className="text-[#111111] dark:text-white">Network:</strong> Hedera Testnet (Chain ID 296)</div>
+                  <div>• <strong className="text-[#111111] dark:text-white">RPC:</strong> https://testnet.hashio.io/api</div>
+                  <div>• <strong className="text-[#111111] dark:text-white">Resolution:</strong> Automatically maps EVM address to Hedera Account ID (0.0.x) on Mirror Node</div>
                 </div>
               </div>
 
               {metaMaskStatusText && (
-                <div className="p-3 bg-[#5465FF]/10 border border-[#5465FF]/30 rounded-lg text-[#DFE0E2] text-xs font-mono flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#5465FF] shrink-0" />
+                <div className="p-3 bg-[#ECEEFF] dark:bg-white/5 border border-[#DFE3F8] dark:border-white/10 rounded-xl text-[#1749F5] dark:text-[#5B8EFF] text-xs font-archivo flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
                   <span>{metaMaskStatusText}</span>
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-[#1A2E38]">
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10">
                 <Button variant="outline" type="button" onClick={() => setShowLinkWalletModal(false)}>
                   Cancel
                 </Button>
@@ -1113,13 +1220,13 @@ export default function AgentWalletPage() {
             </div>
           ) : (
             <form onSubmit={handleLinkWalletSubmit} className="space-y-4">
-              <div className="p-3 bg-[#071013] border border-[#1A2E38] rounded-lg text-xs font-mono text-[#AAAAAA] space-y-1">
-                <div className="font-semibold text-[#DFE0E2] flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
-                  Hedera Mirror Node On-Chain Verification
+              <div className="p-4 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 rounded-2xl text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] space-y-1">
+                <div className="font-semibold text-[#111111] dark:text-[#F5F8FF] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#10B981]" />
+                  Hedera Mirror Node Verification
                 </div>
                 <p>
-                  Enter your Hedera account ID. PaidX will verify the account on Mirror Node, check key control, and link it securely.
+                  Enter your Hedera account ID. PaidX will query Mirror Node to verify account status and link it securely.
                 </p>
               </div>
 
@@ -1131,29 +1238,23 @@ export default function AgentWalletPage() {
                 required
               />
 
-              <div>
-                <Input
-                  label="Delegated Signing Key (Optional / Dev & Testing)"
-                  type="password"
-                  value={linkSigningKey}
-                  onChange={(e) => setLinkSigningKey(e.target.value)}
-                  placeholder="0x... or 302e... (DER/Hex private key)"
-                />
-                <p className="text-[11px] font-mono text-[#AAAAAA] mt-1">
-                  Encrypted in memory only, never stored on disk or database. Enables AI agents to sign payments autonomously.
-                </p>
-              </div>
+              <Input
+                label="Delegated Signing Key (Optional / Dev Testing)"
+                type="password"
+                value={linkSigningKey}
+                onChange={(e) => setLinkSigningKey(e.target.value)}
+                placeholder="0x... or 302e... (DER/Hex private key)"
+                helperText="Encrypted in memory only. Enables AI agents to sign payments autonomously."
+              />
 
-              <div>
-                <Input
-                  label="Public Key (Alternative if no private key)"
-                  value={linkPublicKey}
-                  onChange={(e) => setLinkPublicKey(e.target.value)}
-                  placeholder="302a... (Hex public key)"
-                />
-              </div>
+              <Input
+                label="Public Key (Alternative if no private key)"
+                value={linkPublicKey}
+                onChange={(e) => setLinkPublicKey(e.target.value)}
+                placeholder="302a... (Hex public key)"
+              />
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-[#1A2E38]">
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10">
                 <Button variant="outline" type="button" onClick={() => setShowLinkWalletModal(false)}>
                   Cancel
                 </Button>
@@ -1173,22 +1274,24 @@ export default function AgentWalletPage() {
         title={createdToken ? 'Agent Connected Successfully' : 'Connect New AI Agent'}
       >
         {createdToken ? (
-          <div className="space-y-4 font-mono text-xs">
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+          <div className="space-y-4 font-archivo text-xs">
+            <div className="p-4 bg-[#ECFDF5] border border-emerald-200 dark:border-emerald-800/40 rounded-2xl text-[#10B981] flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[#10B981]" />
               <div>
-                <div className="font-semibold text-emerald-300">Agent Token Minted & Ready to Connect</div>
-                <div className="text-[11px] text-emerald-400/80 mt-0.5">
+                <div className="font-semibold text-sm text-[#111111] dark:text-white">
+                  Agent Token Minted & Ready to Connect
+                </div>
+                <div className="text-xs text-[#334155] dark:text-[#A9B9D5] mt-1">
                   This Bearer token is shown only once. Copy it now and configure your AI client (Claude Desktop, Cursor, ChatGPT).
                 </div>
               </div>
             </div>
 
             {/* Public MCP Server Endpoint */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[#AAAAAA]">
-                <label className="block text-xs">Public MCP Server Endpoint:</label>
-                <span className="text-[10px] text-[#5465FF] bg-[#5465FF]/10 px-1.5 py-0.5 rounded border border-[#5465FF]/20 font-mono">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[#64748B] dark:text-[#94A3B8]">
+                <label className="text-xs font-medium">Public MCP Server Endpoint:</label>
+                <span className="text-[10px] font-semibold text-[#1749F5] bg-[#ECEEFF] dark:bg-white/10 px-2 py-0.5 rounded-full">
                   Streamable HTTP
                 </span>
               </div>
@@ -1196,7 +1299,7 @@ export default function AgentWalletPage() {
                 <input
                   readOnly
                   value={publicMcpUrl}
-                  className="flex-1 bg-[#071013] border border-[#1A2E38] rounded-lg px-3 py-2 text-[#00F5D4] select-all font-mono text-xs"
+                  className="flex-1 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/15 rounded-xl px-3 py-2 text-[#1749F5] dark:text-[#5B8EFF] font-mono text-xs select-all"
                 />
                 <Button
                   variant="outline"
@@ -1204,20 +1307,22 @@ export default function AgentWalletPage() {
                   type="button"
                   onClick={() => copyToClipboard(publicMcpUrl, 'url')}
                 >
-                  {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-400 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                  {copiedUrl ? <Check className="w-3.5 h-3.5 text-[#10B981] mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
                   {copiedUrl ? 'Copied' : 'Copy'}
                 </Button>
               </div>
             </div>
 
             {/* PaidX Agent Bearer Token */}
-            <div className="space-y-1">
-              <label className="text-[#AAAAAA] block text-xs">PaidX Agent Bearer Token (Shown Once):</label>
+            <div className="space-y-1.5">
+              <label className="text-[#64748B] dark:text-[#94A3B8] block text-xs font-medium">
+                PaidX Agent Bearer Token (Shown Once):
+              </label>
               <div className="flex gap-2">
                 <input
                   readOnly
                   value={createdToken}
-                  className="flex-1 bg-[#071013] border border-[#1A2E38] rounded-lg px-3 py-2 text-[#DFE0E2] select-all font-mono text-xs break-all"
+                  className="flex-1 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/15 rounded-xl px-3 py-2 text-[#111111] dark:text-white font-mono text-xs select-all break-all"
                 />
                 <Button
                   variant="outline"
@@ -1225,18 +1330,18 @@ export default function AgentWalletPage() {
                   type="button"
                   onClick={() => copyToClipboard(createdToken, 'token')}
                 >
-                  {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-400 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
-                  {copiedToken ? 'Token Copied!' : 'Copy Token'}
+                  {copiedToken ? <Check className="w-3.5 h-3.5 text-[#10B981] mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                  {copiedToken ? 'Copied!' : 'Copy'}
                 </Button>
               </div>
             </div>
 
             {/* Claude Desktop / Cursor MCP Setup */}
-            <div className="p-3 bg-[#071013] border border-[#1A2E38] rounded-lg text-[#AAAAAA] space-y-2">
+            <div className="p-4 bg-[#050B1B] text-white rounded-2xl border border-white/10 space-y-2.5">
               <div className="flex items-center justify-between">
-                <div className="font-semibold text-[#DFE0E2]">Claude Desktop / Cursor MCP Setup:</div>
+                <span className="font-semibold text-xs text-white">Claude Desktop / Cursor Config:</span>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   type="button"
                   onClick={() =>
@@ -1245,60 +1350,53 @@ export default function AgentWalletPage() {
                       'config'
                     )
                   }
-                  className="text-[11px] h-7 px-2.5"
+                  className="text-[11px] text-[#A9B9D5] hover:text-white h-7 px-2.5 bg-white/10 hover:bg-white/20"
                 >
                   {copiedConfig ? (
-                    <Check className="w-3 h-3 text-emerald-400 mr-1" />
+                    <Check className="w-3 h-3 text-[#10B981] mr-1" />
                   ) : (
                     <Copy className="w-3 h-3 mr-1" />
                   )}
-                  {copiedConfig ? 'Config Copied!' : 'Copy MCP Configuration'}
+                  {copiedConfig ? 'Copied!' : 'Copy JSON'}
                 </Button>
               </div>
-              <pre className="text-[11px] text-[#DFE0E2] bg-[#0E1D24] p-3 rounded overflow-x-auto whitespace-pre font-mono border border-[#1A2E38]/60">
+              <pre className="text-[11px] text-[#A9B9D5] p-3 rounded-xl bg-black/40 overflow-x-auto whitespace-pre font-mono border border-white/5">
 {JSON.stringify(buildMcpClientConfig(createdToken, publicMcpUrl), null, 2)}
               </pre>
             </div>
 
-            {/* MCP Connection Test Section */}
-            <div className="space-y-2">
+            {/* MCP Connection Test */}
+            <div className="space-y-2 pt-1">
               <Button
                 variant="outline"
                 type="button"
-                className="w-full flex items-center justify-center gap-2 border-[#1A2E38] hover:border-[#5465FF]/50 text-[#DFE0E2]"
+                className="w-full justify-center"
                 onClick={handleTestMcpConnection}
                 disabled={isTestingMcp}
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isTestingMcp ? 'animate-spin text-[#5465FF]' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 mr-2 ${isTestingMcp ? 'animate-spin text-[#1749F5]' : ''}`} />
                 {isTestingMcp ? 'Verifying MCP Connection...' : 'Test MCP Connection'}
               </Button>
 
               {mcpTestResult && (
                 <div
-                  className={`p-3 rounded-lg border text-xs font-mono space-y-1 ${
+                  className={`p-3.5 rounded-xl border text-xs font-archivo space-y-1 ${
                     mcpTestResult.success
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                      ? 'bg-[#ECFDF5] border-emerald-200 dark:border-emerald-800/40 text-[#10B981]'
+                      : 'bg-[#FEF2F2] border-red-200 dark:border-red-800/40 text-[#EF4444]'
                   }`}
                 >
                   <div className="flex items-center gap-2 font-semibold">
                     {mcpTestResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
                     ) : (
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
                     )}
                     <span>{mcpTestResult.success ? 'MCP Connection Verified' : 'MCP Test Failed'}</span>
                   </div>
-                  <p className="text-[11px] opacity-90 break-all">
+                  <p className="text-xs opacity-90 break-all">
                     {mcpTestResult.success ? mcpTestResult.message : mcpTestResult.error}
                   </p>
-                  {mcpTestResult.success && mcpTestResult.mcpUrl && (
-                    <div className="text-[10px] text-[#AAAAAA] pt-1 border-t border-emerald-500/20 flex flex-wrap gap-x-3">
-                      <span>Endpoint: {mcpTestResult.mcpUrl}</span>
-                      {mcpTestResult.protocolVersion && <span>Protocol: {mcpTestResult.protocolVersion}</span>}
-                      {mcpTestResult.serverInfo?.name && <span>Server: {mcpTestResult.serverInfo.name}</span>}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -1308,10 +1406,10 @@ export default function AgentWalletPage() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleConnectAgent} className="space-y-4">
+          <form onSubmit={handleConnectAgent} className="space-y-4 font-archivo">
             {!hederaWallet && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs font-mono flex items-center justify-between">
-                <span>No Hedera wallet linked. Link a wallet first:</span>
+              <div className="p-3.5 bg-[#FFFBEB] border border-amber-200 dark:border-amber-800/40 rounded-xl text-amber-700 dark:text-amber-300 text-xs flex items-center justify-between gap-3">
+                <span>No Hedera wallet linked yet.</span>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1320,6 +1418,7 @@ export default function AgentWalletPage() {
                     setShowConnectModal(false);
                     setShowLinkWalletModal(true);
                   }}
+                  className="text-xs shrink-0"
                 >
                   Link Wallet
                 </Button>
@@ -1327,7 +1426,7 @@ export default function AgentWalletPage() {
             )}
 
             {agentConnectError && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-xs font-mono flex items-center gap-2">
+              <div className="p-3.5 bg-[#FEF2F2] border border-red-200 dark:border-red-800/40 rounded-xl text-[#EF4444] text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>{agentConnectError}</span>
               </div>
@@ -1343,7 +1442,7 @@ export default function AgentWalletPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <Input
-                label="Max per Transaction (USDC)"
+                label="Max per Tx (USDC)"
                 type="number"
                 step="0.01"
                 value={maxPerTx}
@@ -1351,7 +1450,7 @@ export default function AgentWalletPage() {
                 required
               />
               <Input
-                label="Daily Spending Cap (USDC)"
+                label="Daily Cap (USDC)"
                 type="number"
                 step="0.01"
                 value={dailyBudget}
@@ -1361,7 +1460,7 @@ export default function AgentWalletPage() {
             </div>
 
             <Input
-              label="Monthly Spending Cap (USDC)"
+              label="Monthly Cap (USDC)"
               type="number"
               step="0.01"
               value={monthlyBudget}
@@ -1369,22 +1468,24 @@ export default function AgentWalletPage() {
               required
             />
 
-            <div className="flex items-center justify-between p-3 bg-[#071013] border border-[#1A2E38] rounded-lg">
+            <div className="flex items-center justify-between p-4 bg-[#F8FAFC] dark:bg-white/5 border border-[#E2E8F0] dark:border-white/10 rounded-xl">
               <div>
-                <div className="text-xs font-semibold text-[#DFE0E2]">Autonomous Payments</div>
-                <div className="text-[11px] text-[#AAAAAA]">
-                  Allow agent to pay up to daily budget without prompting
+                <div className="text-xs font-semibold text-[#111111] dark:text-[#F5F8FF]">
+                  Autonomous Execution
+                </div>
+                <div className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                  Allow agent to pay up to daily budget without user prompt
                 </div>
               </div>
               <input
                 type="checkbox"
                 checked={autonomousEnabled}
                 onChange={(e) => setAutonomousEnabled(e.target.checked)}
-                className="w-4 h-4 accent-[#5465FF] rounded"
+                className="w-4 h-4 accent-[#1749F5] rounded"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-2">
               <Button variant="outline" type="button" onClick={() => setShowConnectModal(false)}>
                 Cancel
               </Button>

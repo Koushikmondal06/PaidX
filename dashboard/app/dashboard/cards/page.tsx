@@ -26,6 +26,9 @@ import {
   Radio,
   CheckCircle2,
   Trash2,
+  ExternalLink,
+  Sparkles,
+  Wifi,
 } from 'lucide-react';
 
 interface CardRow {
@@ -184,7 +187,7 @@ export default function CardsAndLimitsPage() {
         });
 
         if (receipt.status !== 'success') {
-          throw new Error('Card registration transaction reverted on Sepolia.');
+          throw new Error('Card registration transaction reverted on Base/Sepolia.');
         }
       }
 
@@ -313,15 +316,18 @@ export default function CardsAndLimitsPage() {
   if (!session) return null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 sm:space-y-10">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#1A2E38]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-[#E2E8F0] dark:border-white/10">
         <div>
-          <h1 className="text-xl font-bold font-mono tracking-tight text-[#DFE0E2]">
-            Physical NFC Cards & Spending Limits
-          </h1>
-          <p className="text-xs font-mono text-[#AAAAAA] mt-1">
-            Manage hardware cards linked to your self-custody wallet on Ethereum Sepolia
+          <div className="flex items-center gap-2.5 mb-1.5">
+            <h1 className="text-2xl sm:text-3xl font-semibold font-archivo tracking-tight text-[#111111] dark:text-[#F5F8FF]">
+              Physical NFC Cards & Spending Limits
+            </h1>
+            <Badge variant="info">ERC-4337 SMART ACCOUNT</Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] font-archivo">
+            Manage your hardware tap cards linked to self-custody smart account on Base L2
           </p>
         </div>
 
@@ -329,139 +335,188 @@ export default function CardsAndLimitsPage() {
           variant="primary"
           size="sm"
           onClick={() => setShowClaimModal(true)}
-          className="font-mono text-xs"
+          className="font-archivo text-xs gap-1.5"
         >
-          <Plus className="w-3.5 h-3.5 mr-1.5" />
+          <Plus className="w-4 h-4" />
           <span>Issue a Card</span>
         </Button>
       </div>
 
       {loadError && (
-        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+        <div className="p-4 rounded-2xl bg-[#FEF2F2] border border-red-200 dark:border-red-900/60 text-[#EF4444] text-xs sm:text-sm font-archivo flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{loadError}</span>
           </div>
-          <Button variant="outline" size="sm" onClick={loadData} className="font-mono text-xs shrink-0">
+          <Button variant="outline" size="sm" onClick={loadData} className="text-xs shrink-0">
             Retry
           </Button>
         </div>
       )}
 
       {actionError && (
-        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono flex items-center gap-2">
+        <div className="p-4 rounded-2xl bg-[#FEF2F2] border border-red-200 dark:border-red-900/60 text-[#EF4444] text-xs sm:text-sm font-archivo flex items-center gap-2.5">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{actionError}</span>
         </div>
       )}
 
-      {/* Linked Cards Section */}
-      <div className="space-y-4">
-        <h2 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
-          Registered Physical Cards
-        </h2>
+      {/* Linked Physical Cards Section */}
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs sm:text-[13px] font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF] uppercase tracking-wider">
+            Registered Physical Cards ({cards.length})
+          </h2>
+          <span className="text-xs font-archivo text-[#64748B] dark:text-[#94A3B8]">
+            Sub-second contactless execution
+          </span>
+        </div>
 
         {cards.length === 0 ? (
-          <Card className="border-[#1A2E38] py-8 text-center space-y-3">
-            <Radio className="w-8 h-8 text-[#5465FF] mx-auto opacity-70" />
-            <p className="text-xs font-mono text-[#AAAAAA]">
-              No physical NFC cards linked to your account yet.
-            </p>
+          <div className="bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 rounded-[28px] p-8 sm:p-12 text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-[#09152D] text-[#1749F5] dark:text-[#5B8EFF] flex items-center justify-center mx-auto shadow-sm">
+              <Radio className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="font-archivo font-semibold text-lg text-[#111111] dark:text-[#F5F8FF]">
+                No physical NFC cards linked yet
+              </h3>
+              <p className="text-xs sm:text-sm font-archivo text-[#334155] dark:text-[#A9B9D5] mt-1.5 max-w-md mx-auto leading-relaxed">
+                Link a PaidX smart card to your self-custody account for frictionless, contactless in-store checkouts without unlocking your phone.
+              </p>
+            </div>
             <Button
-              variant="outline"
-              size="sm"
+              variant="primary"
+              size="md"
               onClick={() => setShowClaimModal(true)}
-              className="font-mono text-xs"
+              className="mt-2"
             >
               Issue Your First Card
             </Button>
-          </Card>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {cards.map((card) => (
-              <Card
-                key={card.id}
-                className={`border-[#1A2E38] space-y-4 relative overflow-hidden transition-all ${
-                  card.status === 'frozen' ? 'opacity-70 bg-[#071013]' : 'bg-[#0B161B]'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`p-2 rounded-lg ${
-                        card.status === 'active'
-                          ? 'bg-[#5465FF]/20 text-[#5465FF]'
-                          : 'bg-rose-950/40 text-rose-400'
-                      }`}
-                    >
-                      <CreditCard className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-mono font-bold text-[#DFE0E2]">
-                        NFC Card ({truncateAddress(card.uid_hash)})
-                      </h3>
-                      <p className="text-[10px] font-mono text-[#666666]">
-                        Registered: {new Date(card.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {!card.registration_tx_hash && (
-                      <Badge variant="warning" className="text-[10px]">
-                        Not on-chain (DB-only)
-                      </Badge>
-                    )}
-                    <Badge variant={card.status === 'active' ? 'active' : 'frozen'}>
-                      {card.status.toUpperCase()}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-[#071013] rounded-lg border border-[#1A2E38] text-[11px] font-mono text-[#888888] space-y-1">
-                  <p>
-                    <span className="text-[#AAAAAA]">Hashed Identifier:</span>{' '}
-                    <span className="text-indigo-300 select-all">{truncateAddress(card.uid_hash)}</span>
-                  </p>
-                  <p>
-                    <span className="text-[#AAAAAA]">On-chain Registry:</span>{' '}
-                    <span className={card.registration_tx_hash ? 'text-emerald-400' : 'text-amber-400'}>
-                      {card.registration_tx_hash ? 'Confirmed' : 'Not on-chain (DB-only)'}
-                    </span>
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-[#1A2E38] flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={updatingCardId !== null}
-                    isLoading={updatingCardId === card.id}
-                    onClick={() => handleToggleFreeze(card)}
-                    className="font-mono text-xs"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {cards.map((card) => {
+              const isActive = card.status === 'active';
+              return (
+                <div
+                  key={card.id}
+                  className={`bg-white dark:bg-[#09152D] rounded-[24px] border border-[#E2E8F0] dark:border-white/10 p-6 sm:p-7 shadow-[0_4px_20px_-2px_rgba(17,24,39,0.05)] space-y-5 relative overflow-hidden transition-all ${
+                    !isActive ? 'opacity-75' : ''
+                  }`}
+                >
+                  {/* Visual Card Representation inside */}
+                  <div
+                    className={`rounded-[18px] p-5 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[170px] ${
+                      isActive
+                        ? 'bg-gradient-to-br from-[#1749F5] via-[#1A38BE] to-[#0E1F73]'
+                        : 'bg-gradient-to-br from-[#475467] to-[#1D2939]'
+                    }`}
                   >
-                    {card.status === 'active' ? (
-                      <>
-                        <Lock className="w-3 h-3 mr-1 text-rose-400" />
-                        <span>Freeze Card</span>
-                      </>
+                    {/* Top Row: PaidX Brand + Contactless Icon */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-archivo font-extrabold tracking-tight text-lg text-white">
+                          Paid<span className="text-[#19D9F2]">X</span>
+                        </span>
+                        <span className="text-[9px] font-archivo font-semibold uppercase tracking-wider text-white/70 ml-1">
+                          NFC Smart Card
+                        </span>
+                      </div>
+                      <Wifi className="w-5 h-5 rotate-90 text-white/80" />
+                    </div>
+
+                    {/* Chip Graphic & Card UID */}
+                    <div className="my-3 flex items-center justify-between">
+                      <div className="w-9 h-7 rounded-md bg-amber-300/80 border border-amber-200/50 flex flex-col justify-around p-1">
+                        <div className="h-0.5 w-full bg-amber-600/40 rounded-full" />
+                        <div className="h-0.5 w-full bg-amber-600/40 rounded-full" />
+                        <div className="h-0.5 w-full bg-amber-600/40 rounded-full" />
+                      </div>
+                      <div className="font-mono text-xs sm:text-[13px] tracking-wider text-white/90 font-medium">
+                        {truncateAddress(card.uid_hash)}
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Status & Network */}
+                    <div className="flex items-center justify-between text-[11px] font-archivo text-white/80 pt-1 border-t border-white/10">
+                      <span>BASE L2 SMART SETTLEMENT</span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white backdrop-blur-sm">
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#10B981]' : 'bg-amber-400'}`} />
+                        {card.status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card Metadata info */}
+                  <div className="p-4 bg-[#F8FAFC] dark:bg-white/5 rounded-xl border border-[#E2E8F0] dark:border-white/10 text-xs font-archivo space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B] dark:text-[#94A3B8]">Salted Card Hash:</span>
+                      <span className="text-[#1749F5] dark:text-[#5B8EFF] font-mono select-all font-medium">
+                        {truncateAddress(card.uid_hash)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B] dark:text-[#94A3B8]">On-Chain Registry:</span>
+                      <span className={card.registration_tx_hash ? 'text-[#10B981] font-medium' : 'text-amber-500 font-medium'}>
+                        {card.registration_tx_hash ? 'Confirmed On-Chain' : 'Off-Chain Pending'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B] dark:text-[#94A3B8]">Registered:</span>
+                      <span className="text-[#111111] dark:text-white">
+                        {new Date(card.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-2 border-t border-[#E2E8F0] dark:border-white/10 flex items-center justify-between">
+                    {card.registration_tx_hash ? (
+                      <a
+                        href={getExplorerTxUrl(card.registration_tx_hash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-[#1749F5] dark:text-[#5B8EFF] font-archivo font-medium hover:underline inline-flex items-center gap-1"
+                      >
+                        <span>On-Chain Receipt</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     ) : (
-                      <>
-                        <Unlock className="w-3 h-3 mr-1 text-emerald-400" />
-                        <span>Unfreeze Card</span>
-                      </>
+                      <span className="text-xs text-[#64748B] dark:text-[#94A3B8]">Local Registry</span>
                     )}
-                  </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={updatingCardId !== null}
+                      isLoading={updatingCardId === card.id}
+                      onClick={() => handleToggleFreeze(card)}
+                      className="text-xs font-archivo"
+                    >
+                      {isActive ? (
+                        <>
+                          <Lock className="w-3.5 h-3.5 mr-1.5 text-[#EF4444]" />
+                          <span>Freeze Card</span>
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="w-3.5 h-3.5 mr-1.5 text-[#10B981]" />
+                          <span>Unfreeze Card</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              </Card>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* ERC-7715 Permission Delegation Section */}
-      <div className="space-y-4">
-        <h2 className="text-xs font-mono font-bold text-[#DFE0E2] uppercase tracking-wider">
+      <div className="space-y-5">
+        <h2 className="text-xs sm:text-[13px] font-archivo font-semibold text-[#111111] dark:text-[#F5F8FF] uppercase tracking-wider">
           Active Spending Delegation (ERC-7715)
         </h2>
 
@@ -472,59 +527,90 @@ export default function CardsAndLimitsPage() {
               Math.ceil((new Date(activePermission.valid_until).getTime() - Date.now()) / (86400 * 1000))
             );
             const isExpiringSoon = daysRemaining <= 3;
+            const limit = parseFloat(formatUsdc(activePermission.limit_per_period));
+            const remaining = parseFloat(formatUsdc(activePermission.remaining_in_period));
+            const spent = Math.max(0, limit - remaining);
+            const percentSpent = limit > 0 ? Math.round((spent / limit) * 100) : 0;
 
             return (
-              <Card className="border-[#1A2E38] space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-mono font-bold text-[#DFE0E2]">
-                      Rolling 24-Hour Spending Cap: ${formatUsdc(activePermission.limit_per_period)} USDC
-                    </p>
-                    <p className="text-[11px] font-mono text-[#888888] mt-0.5">
-                      Available in current period: ${formatUsdc(activePermission.remaining_in_period)} USDC · Expires in{' '}
-                      <span className={isExpiringSoon ? 'text-amber-400 font-bold' : 'text-slate-300'}>
-                        {daysRemaining} day{daysRemaining === 1 ? '' : 's'}
-                      </span>{' '}
-                      ({new Date(activePermission.valid_until).toLocaleDateString()})
-                    </p>
+              <div className="bg-[#ECEEFF] dark:bg-[#0C1838] border border-[#DFE3F8] dark:border-white/10 rounded-[28px] p-6 sm:p-8 space-y-5 transition-colors shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-[#09152D] text-[#1749F5] dark:text-[#5B8EFF] flex items-center justify-center shadow-sm shrink-0">
+                      <Sliders className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-archivo font-semibold text-base sm:text-lg text-[#111111] dark:text-[#F5F8FF]">
+                        Rolling 24-Hour Spending Cap: ${limit.toFixed(2)} USDC
+                      </h3>
+                      <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] font-archivo mt-0.5">
+                        Available in current cycle: <strong className="text-[#10B981] font-semibold">${remaining.toFixed(2)} USDC</strong> · Expires in{' '}
+                        <span className={isExpiringSoon ? 'text-[#EF4444] font-semibold' : 'text-[#111111] dark:text-white font-medium'}>
+                          {daysRemaining} day{daysRemaining === 1 ? '' : 's'}
+                        </span>{' '}
+                        ({new Date(activePermission.valid_until).toLocaleDateString()})
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
                     {isExpiringSoon && (
-                      <Link href="/onboarding" className="font-mono text-xs text-amber-400 hover:underline">
-                        Renew
+                      <Link href="/onboarding">
+                        <Button variant="primary" size="sm" className="text-xs">
+                          Renew Delegation
+                        </Button>
                       </Link>
                     )}
                     <Button
                       variant="danger"
                       size="sm"
                       onClick={() => setShowRevokeModal(true)}
-                      className="font-mono text-xs w-fit"
+                      className="text-xs"
                     >
-                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                       <span>Revoke Delegation</span>
                     </Button>
                   </div>
                 </div>
 
+                {/* Progress bar inside elevated card */}
+                <div className="p-5 bg-white dark:bg-[#09152D] rounded-2xl border border-[#DFE3F8] dark:border-white/10 space-y-2 shadow-sm">
+                  <div className="flex justify-between text-xs sm:text-[13px] font-archivo">
+                    <span className="text-[#334155] dark:text-[#A9B9D5]">
+                      Daily Spent: <strong className="text-[#111111] dark:text-white font-semibold">${spent.toFixed(2)} USDC</strong>
+                    </span>
+                    <span className="text-[#111111] dark:text-white font-semibold">
+                      Daily Limit: ${limit.toFixed(2)} USDC
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 bg-[#F1F5F9] dark:bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        percentSpent > 85 ? 'bg-[#EF4444]' : 'bg-[#1749F5]'
+                      }`}
+                      style={{ width: `${percentSpent}%` }}
+                    />
+                  </div>
+                </div>
+
                 {isExpiringSoon && (
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
-                    <span>Delegation expires in {daysRemaining} days. Please renew to keep contactless card payments active.</span>
+                  <div className="p-3.5 bg-[#FFFBEB] border border-amber-200 dark:border-amber-800/40 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+                    <span>Delegation expires in {daysRemaining} days. Renew now to avoid transaction tap declines.</span>
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })()
         ) : (
-          <Card className="border-[#1A2E38] py-6 text-center space-y-2">
-            <p className="text-xs font-mono text-[#AAAAAA]">
-              No active spending delegation found.
+          <div className="bg-white dark:bg-[#09152D] rounded-[24px] border border-[#E2E8F0] dark:border-white/10 p-8 text-center space-y-2.5 shadow-sm">
+            <p className="text-sm font-archivo font-medium text-[#111111] dark:text-[#F5F8FF]">
+              No active spending delegation found
             </p>
-            <p className="text-[11px] font-mono text-[#666666]">
-              Create an account or complete wallet onboarding to configure periodic spending limits.
+            <p className="text-xs font-archivo text-[#64748B] dark:text-[#94A3B8] max-w-sm mx-auto">
+              Configure periodic spending limits to enable automatic micro-tap settlement at retail POS registers.
             </p>
-          </Card>
+          </div>
         )}
       </div>
 
@@ -534,10 +620,10 @@ export default function CardsAndLimitsPage() {
         onClose={() => setShowClaimModal(false)}
         title="Issue Physical NFC Card"
       >
-        <form onSubmit={handleRegisterCard} className="space-y-4">
-          <p className="text-xs font-mono text-[#AAAAAA]">
-            Enter the NFC tag UID from your physical card to issue and link it to your MetaMask wallet.
-            The raw UID is hashed server-side with CARD_UID_SALT and never stored in plain text.
+        <form onSubmit={handleRegisterCard} className="space-y-5 font-archivo">
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
+            Enter the NFC tag UID from your physical card to issue and link it to your account.
+            The raw UID is hashed server-side with a cryptographic salt and never stored in plain text.
           </p>
 
           <Input
@@ -545,15 +631,15 @@ export default function CardsAndLimitsPage() {
             placeholder="e.g. 04:A2:B3:C4:D5:E6:F7"
             value={rawNfcUid}
             onChange={(e) => setRawNfcUid(e.target.value)}
-            helperText="Hexadecimal UID format"
+            helperText="Hexadecimal UID format from physical card"
             required
           />
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10">
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="md"
               onClick={() => setShowClaimModal(false)}
             >
               Cancel
@@ -561,10 +647,10 @@ export default function CardsAndLimitsPage() {
             <Button
               type="submit"
               variant="primary"
-              size="sm"
+              size="md"
               isLoading={isSubmittingCard}
             >
-              Issue a Card
+              Issue Card
             </Button>
           </div>
         </form>
@@ -576,23 +662,24 @@ export default function CardsAndLimitsPage() {
         onClose={() => setShowRevokeModal(false)}
         title="Revoke Spending Permission"
       >
-        <div className="space-y-4">
-          <p className="text-xs font-mono text-[#AAAAAA]">
+        <div className="space-y-5 font-archivo">
+          <p className="text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
             Are you sure you want to revoke this ERC-7715 spending delegation?
             Physical NFC card taps will immediately be rejected until a new delegation is granted.
           </p>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-2 border-t border-[#E2E8F0] dark:border-white/10">
             <Button
+              type="button"
               variant="outline"
-              size="sm"
+              size="md"
               onClick={() => setShowRevokeModal(false)}
             >
               Cancel
             </Button>
             <Button
               variant="danger"
-              size="sm"
+              size="md"
               onClick={handleRevokePermission}
             >
               Confirm Revocation

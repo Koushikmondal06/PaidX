@@ -16,25 +16,25 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    'inline-flex items-center justify-center font-mono font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#071013] disabled:opacity-50 disabled:cursor-not-allowed select-none';
+    'inline-flex items-center justify-center font-archivo font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-[#050B1B] disabled:opacity-50 disabled:cursor-not-allowed select-none active:scale-[0.98]';
 
   const sizeStyles = {
-    sm: 'text-xs px-3 py-1.5 h-8 gap-1.5',
-    md: 'text-xs px-4 py-2 h-10 gap-2',
-    lg: 'text-sm px-6 py-2.5 h-12 gap-2.5',
+    sm: 'text-xs px-3 py-1.5 h-8 gap-1.5 rounded-lg',
+    md: 'text-sm px-4 py-2 h-10 gap-2 rounded-xl',
+    lg: 'text-base px-6 py-2.5 h-12 gap-2.5 rounded-xl',
   };
 
   const variantStyles = {
     primary:
-      'bg-[#5465FF] hover:bg-[#4353E0] text-white shadow-sm shadow-[#5465FF]/20 focus:ring-[#5465FF]',
+      'bg-[#1749F5] hover:bg-[#113AC8] text-white shadow-sm focus:ring-[#1749F5]',
     secondary:
-      'bg-[#0E1D24] hover:bg-[#1A2E38] text-[#DFE0E2] border border-[#1A2E38] focus:ring-[#1A2E38]',
+      'bg-white dark:bg-[#09152D] hover:bg-[#F8FAFC] dark:hover:bg-white/5 text-[#303747] dark:text-[#F5F8FF] border border-[#E2E8F0] dark:border-white/10 shadow-sm focus:ring-[#E2E8F0]',
     outline:
-      'bg-transparent hover:bg-[#0E1D24] text-[#DFE0E2] border border-[#1A2E38] hover:border-[#5465FF]/50 focus:ring-[#5465FF]',
+      'bg-transparent hover:bg-[#ECEEFF]/60 dark:hover:bg-white/5 text-[#303747] dark:text-[#F5F8FF] border border-[#E2E8F0] dark:border-white/10 hover:border-[#1749F5] focus:ring-[#1749F5]',
     danger:
-      'bg-[#EB5160] hover:bg-[#D94050] text-white shadow-sm shadow-[#EB5160]/20 focus:ring-[#EB5160]',
+      'bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-sm focus:ring-[#EF4444]',
     ghost:
-      'bg-transparent hover:bg-[#0E1D24]/60 text-[#AAAAAA] hover:text-[#DFE0E2] focus:ring-[#1A2E38]',
+      'bg-transparent hover:bg-[#ECEEFF]/60 dark:hover:bg-white/5 text-[#667085] hover:text-[#1749F5] dark:hover:text-[#5B8EFF] focus:ring-transparent',
   };
 
   return (
