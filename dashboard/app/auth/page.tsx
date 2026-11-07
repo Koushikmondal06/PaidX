@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getRealUserSession, clearSession } from '@/lib/auth';
 import { APP_URL } from '@/lib/base';
-import { ArrowRight, AlertCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle, Fingerprint, Sparkles } from 'lucide-react';
 
 export default function AuthPage() {
   const router = useRouter();
@@ -318,11 +318,25 @@ export default function AuthPage() {
               <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
             </Button>
           </form>
+
+          {/* Passkey Alternative */}
+          <div className="pt-2 border-t border-[#1A2E38] space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/onboarding')}
+              className="w-full border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 font-mono text-xs flex items-center justify-center gap-2"
+            >
+              <Fingerprint className="w-4 h-4 text-emerald-400" />
+              <span>Sign in with Passkey / Face ID</span>
+            </Button>
+          </div>
         </Card>
 
         {/* Security Tagline */}
         <div className="text-center text-[11px] font-mono text-[#666666]">
-          Non-custodial smart accounts on Ethereum Sepolia
+          Non-custodial Native MPC accounts on Hedera Testnet (Chain ID: 296)
         </div>
       </div>
     </div>

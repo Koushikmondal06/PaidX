@@ -120,12 +120,13 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
   });
 
   // --------------------------------------------------------------------------
-  // 1. Tool Parity: All 19 registered tools
+  // 1. Tool Parity: All 21 registered tools
   // --------------------------------------------------------------------------
-  await t.test('1: Preserves all 19 registered MCP tools with correct schemas', () => {
-    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 19);
+  await t.test('1: Preserves all 21 registered MCP tools with correct schemas', () => {
+    assert.strictEqual(MCP_TOOL_DEFINITIONS.length, 21);
     const expectedTools = [
       'get_connected_wallet',
+      'get_wallet_status',
       'get_wallet_address',
       'get_wallet_balance',
       'get_supported_assets',
@@ -139,6 +140,7 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
       'get_agent_spending_limit',
       'get_agent_spending_history',
       'request_payment_approval',
+      'revoke_agent_access',
       'get_hedera_payment_audit',
       'verify_hedera_payment',
       'get_mpc_enrollment_status',
@@ -173,7 +175,7 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
     assert.strictEqual(json.version, '1.0.0');
     assert.strictEqual(json.transport, 'streamable-http');
     assert.strictEqual(json.protocolVersion, '2024-11-05');
-    assert.strictEqual(json.toolsCount, 19);
+    assert.strictEqual(json.toolsCount, 21);
     assert.strictEqual(json.runtime, 'vercel-serverless');
   });
 
@@ -348,7 +350,7 @@ test('Vercel Serverless MCP Deployment, Endpoints & Session Suite', async (t) =>
       assert.strictEqual(listResult.statusCode, 200);
       const listJson = listResult.json();
       assert.ok(listJson.result);
-      assert.strictEqual(listJson.result.tools.length, 19);
+      assert.strictEqual(listJson.result.tools.length, 21);
 
       // --------------------------------------------------------------------------
       // 6. Cross-Agent Isolation Guard Across MicroVMs

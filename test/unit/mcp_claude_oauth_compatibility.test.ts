@@ -540,7 +540,7 @@ test('PaidX MCP Claude OAuth 2.1 & Authentication Compatibility Suite', async (t
     const listResult = getListResult();
     assert.strictEqual(listResult.statusCode, 200);
     const listJson = listResult.json();
-    assert.strictEqual(listJson.result.tools.length, 19);
+    assert.strictEqual(listJson.result.tools.length, 21);
 
     // Step C: Read-only tool execution (get_wallet_address) via Claude OAuth token
     const { req: callReq, res: callRes, getResult: getCallResult } = createMockHttp({
@@ -671,7 +671,7 @@ test('PaidX MCP Claude OAuth 2.1 & Authentication Compatibility Suite', async (t
     });
     await handleMcpRequest(lReq, lRes);
     assert.strictEqual(getLResult().statusCode, 200);
-    assert.strictEqual(getLResult().json().result.tools.length, 19);
+    assert.strictEqual(getLResult().json().result.tools.length, 21);
   });
 
   // --------------------------------------------------------------------------
