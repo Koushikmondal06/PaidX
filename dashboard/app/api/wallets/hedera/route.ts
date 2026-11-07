@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAddress, verifyMessage, recoverMessageAddress } from 'viem';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAuthenticatedUser } from '@/lib/server/auth';
-import { isValidHederaAccountId } from '@/lib/hedera/client';
+import { isValidHederaAccountId, getHederaClient } from '@/lib/hedera/client';
 import {
   getMirrorAccount,
   getMirrorAccountByEvmAddress,
@@ -280,9 +280,43 @@ export async function POST(req: NextRequest) {
       }
 
       if (!mirrorAccount) {
+        // Attempt automated on-chain activation if operator credentials are provided
+        const operatorIdStr = process.env.HEDERA_OPERATOR_ID;
+        const operatorKeyStr = process.env.HEDERA_OPERATOR_KEY;
+
+        if (operatorIdStr && operatorKeyStr) {
+          try {
+            const { TransferTransaction, Hbar, AccountId } = await import('@hiero-ledger/sdk');
+            const client = getHederaClient();
+            const operatorId = AccountId.fromString(operatorIdStr);
+            const evmAccountId = AccountId.fromEvmAddress(0, 0, cleanEvmAddress);
+
+            // Transfer nominal 0.05 HBAR to EVM alias to trigger Hedera HIP-583 automatic account creation
+            const tx = await new TransferTransaction()
+              .addHbarTransfer(operatorId, new Hbar(-0.05))
+              .addHbarTransfer(evmAccountId, new Hbar(0.05))
+              .execute(client);
+
+            const receipt = await tx.getReceipt(client);
+            if (receipt.status.toString() === 'SUCCESS') {
+              // Wait briefly for Mirror Node ingestion
+              await new Promise((r) => setTimeout(r, 2000));
+              mirrorAccount = await getMirrorAccountByEvmAddress(cleanEvmAddress);
+            }
+          } catch (autoErr) {
+            console.warn('[Auto-activation] Sponsoring account creation failed:', autoErr);
+          }
+        }
+      }
+
+      if (!mirrorAccount) {
         return NextResponse.json(
           {
             error: `Hedera account not found for EVM address ${cleanEvmAddress}. On Hedera, an EVM address must be activated on-chain before it can be linked. Please fund your address with Hedera Testnet HBAR (e.g., via the Hedera Portal faucet at portal.hedera.com) to activate your account.`,
+            evmAddress: cleanEvmAddress,
+            requiresActivation: true,
+            faucetUrl: 'https://portal.hedera.com',
+            hashScanUrl: `https://hashscan.io/testnet/account/${cleanEvmAddress}`,
           },
           { status: 404 }
         );
@@ -490,6 +524,24 @@ export async function POST(req: NextRequest) {
 
     // Require cryptographic challenge signature with nonce
     if (!signature || !challenge) {
+      const supabase = createServerSupabaseClient();
+      const { data: existingWallet } = await supabase
+        .from('wallets')
+        .select('id, user_id, address, kind')
+        .eq('chain_id', cleanChainId)
+        .eq('address', cleanAccountId.toLowerCase())
+        .maybeSingle();
+
+      if (existingWallet && existingWallet.user_id !== user.id) {
+        return NextResponse.json(
+          {
+            error:
+              'Forbidden: This Hedera account is already registered to another PaidX user. You must prove cryptographic key control (via signature or signing key) to transfer ownership.',
+          },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json(
         { error: 'Ownership verification required: Both "challenge" and "signature" must be provided.' },
         { status: 400 }

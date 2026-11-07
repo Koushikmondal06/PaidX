@@ -81,26 +81,80 @@ export function setTestMirrorMock(mock: typeof testMirrorMock) {
 }
 
 /**
+ * Helper to fetch with configurable timeout (via AbortController) and retry logic.
+ */
+export async function fetchMirrorWithRetry(
+  url: string,
+  options: { timeoutMs?: number; retries?: number } = {}
+): Promise<Response> {
+  const timeoutMs = options.timeoutMs ?? 8000;
+  const retries = options.retries ?? 2;
+
+  let lastError: any = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 0 },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      // Do not retry 4xx errors (client not found, invalid syntax)
+      if (res.status < 500) {
+        return res;
+      }
+
+      lastError = new Error(`Mirror Node returned HTTP ${res.status}`);
+    } catch (err: any) {
+      clearTimeout(timer);
+      const isAbort = err?.name === 'AbortError';
+      lastError = isAbort
+        ? new Error(`Mirror Node request timed out after ${timeoutMs}ms`)
+        : err;
+    }
+
+    if (attempt < retries) {
+      await new Promise((r) => setTimeout(r, 150 * Math.pow(2, attempt)));
+    }
+  }
+
+  throw lastError;
+}
+
+/**
  * Fetch account info including authorized keys from Hedera Mirror Node
  */
 export async function getMirrorAccount(accountId: string): Promise<MirrorAccount | null> {
   if (testMirrorMock?.getAccount) {
-    return testMirrorMock.getAccount(accountId);
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        return await testMirrorMock.getAccount(accountId);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      }
+    }
+    console.warn(`[Mirror Node Mock] Failed to fetch account ${accountId}:`, lastErr);
+    throw lastErr;
   }
 
   const baseUrl = getMirrorNodeBaseUrl();
   const url = `${baseUrl}/api/v1/accounts/${encodeURIComponent(accountId.trim())}`;
 
   try {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      next: { revalidate: 0 },
-    });
+    const res = await fetchMirrorWithRetry(url, { timeoutMs: 8000, retries: 2 });
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
     console.warn(`[Mirror Node] Failed to fetch account ${accountId}:`, err);
-    return null;
+    throw err;
   }
 }
 
@@ -110,10 +164,34 @@ export async function getMirrorAccount(accountId: string): Promise<MirrorAccount
  */
 export async function getMirrorAccountByEvmAddress(evmAddress: string): Promise<MirrorAccount | null> {
   if (testMirrorMock?.getAccountByEvmAddress) {
-    return testMirrorMock.getAccountByEvmAddress(evmAddress);
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        return await testMirrorMock.getAccountByEvmAddress(evmAddress);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      }
+    }
+    console.warn(`[Mirror Node Mock] Failed to fetch account by EVM ${evmAddress}:`, lastErr);
+    throw lastErr;
   }
   if (testMirrorMock?.getAccount) {
-    return testMirrorMock.getAccount(evmAddress);
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        return await testMirrorMock.getAccount(evmAddress);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
+      }
+    }
+    console.warn(`[Mirror Node Mock] Failed to fetch account by EVM ${evmAddress}:`, lastErr);
+    throw lastErr;
   }
 
   const clean = evmAddress.trim().toLowerCase();
@@ -121,9 +199,9 @@ export async function getMirrorAccountByEvmAddress(evmAddress: string): Promise<
 
   // 1. Direct path lookup: /api/v1/accounts/{evmAddress}
   try {
-    const res = await fetch(`${baseUrl}/api/v1/accounts/${encodeURIComponent(clean)}`, {
-      headers: { Accept: 'application/json' },
-      next: { revalidate: 0 },
+    const res = await fetchMirrorWithRetry(`${baseUrl}/api/v1/accounts/${encodeURIComponent(clean)}`, {
+      timeoutMs: 8000,
+      retries: 2,
     });
     if (res.ok) {
       const data = await res.json();
@@ -135,10 +213,10 @@ export async function getMirrorAccountByEvmAddress(evmAddress: string): Promise<
 
   // 2. Query parameter lookup: /api/v1/accounts?account.evm_address={evmAddress}
   try {
-    const res = await fetch(`${baseUrl}/api/v1/accounts?account.evm_address=${encodeURIComponent(clean)}`, {
-      headers: { Accept: 'application/json' },
-      next: { revalidate: 0 },
-    });
+    const res = await fetchMirrorWithRetry(
+      `${baseUrl}/api/v1/accounts?account.evm_address=${encodeURIComponent(clean)}`,
+      { timeoutMs: 8000, retries: 2 }
+    );
     if (res.ok) {
       const data = await res.json();
       if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
